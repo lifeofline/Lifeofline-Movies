@@ -304,8 +304,11 @@ async function subscribe(btn) {
       modal: { ondismiss: () => { if (btn) btn.disabled = false; } },
     };
     if (o.mode === "subscription") opts.subscription_id = o.subscriptionId; else { opts.order_id = o.orderId; opts.amount = o.price * 100; opts.currency = "INR"; }
-    new window.Razorpay(opts).open();
-  } catch (e) { toast(e.message, 4000); }
+    const rz = new window.Razorpay(opts);
+    // Razorpay's own reason (card declined, UPI timed out, website not approved …) instead of a generic error.
+    rz.on("payment.failed", (r) => { const er = r?.error || {}; toast(`Payment didn't go through: ${er.description || er.reason || "unknown reason"}${er.reason ? ` (${er.reason})` : ""}`, 7000); if (btn) btn.disabled = false; });
+    rz.open();
+  } catch (e) { toast(e.message, 7000); }
   finally { if (btn) btn.disabled = false; }
 }
 async function afterPaid() { await loadMine(); toast("You're Premium. Everything is unlocked and ads are off.", 4000); location.hash = "#home"; route(); }

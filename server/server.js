@@ -173,7 +173,10 @@ const server = http.createServer(async (req, res) => {
       if (token) uid = (await auth.verifyIdToken(token)).uid;
       if (req.url === "/play") return reply(res, 200, { result: await play(uid, body) });
       if (!uid) return reply(res, 401, { error: "Sign in first." });
-      if (req.url === "/sub") { const r = await billing.handle(uid, body); return reply(res, r.status, r.body); }
+      if (req.url === "/sub") {
+        try { const r = await billing.handle(uid, body); return reply(res, r.status, r.body); }
+        catch (e) { if (e.show) throw e; console.error("sub", body?.action, e); return reply(res, 400, { error: "Payment step failed: " + (e.message || "unknown error") + ". Try again, or write to us if money was taken." }); }
+      }
       if (req.url === "/me") return reply(res, 200, { result: await me(uid, body) });
       if (req.url === "/admin") {
         try { return reply(res, 200, { result: await admin(uid, body) }); }

@@ -17,7 +17,8 @@ const PASS_DAYS = 30;
 const GRACE_MS = 2 * 864e5; // Autopay debits can land a day late
 
 module.exports = function makeBilling({ db, FieldValue, env, sendEmail, link }) {
-  const KEY = env.RAZORPAY_KEY_ID || "", SECRET = env.RAZORPAY_KEY_SECRET || "";
+  const clean = (v) => String(v || "").trim().replace(/^["']|["']$/g, ""); // pasted values often carry spaces or quotes
+  const KEY = clean(env.RAZORPAY_KEY_ID), SECRET = clean(env.RAZORPAY_KEY_SECRET);
   const LIVE = !!(KEY && SECRET);
   const SUBS = LIVE && env.RAZORPAY_SUBSCRIPTIONS === "on";
   const MODE = !LIVE ? "test" : SUBS ? "subscription" : "pass";
@@ -29,12 +30,20 @@ module.exports = function makeBilling({ db, FieldValue, env, sendEmail, link }) 
   const hmac = (s, secret = SECRET) => crypto.createHmac("sha256", secret).update(s).digest("hex");
 
   async function rzp(method, path, body) {
-    const res = await fetch("https://api.razorpay.com" + path, {
-      method, headers: { Authorization: "Basic " + Buffer.from(`${KEY}:${SECRET}`).toString("base64"), "Content-Type": "application/json" },
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    let res;
+    try {
+      res = await fetch("https://api.razorpay.com" + path, {
+        method, headers: { Authorization: "Basic " + Buffer.from(`${KEY}:${SECRET}`).toString("base64"), "Content-Type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+    } catch (e) { console.error("Razorpay network", e.message, e.cause?.message || ""); throw show("Couldn't reach Razorpay: " + (e.cause?.message || e.message) + ". Check RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET on Render.", 400); }
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) { console.error("Razorpay", method, path, res.status, JSON.stringify(data)); throw show(data?.error?.description || "The payment service refused this. Try again.", 502); }
+    if (!res.ok) {
+      console.error("Razorpay", method, path, res.status, JSON.stringify(data));
+      const d = data?.error?.description || "";
+      const hint = res.status === 401 || /auth/i.test(d) ? " Check RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET on Render (live keys, both from the same pair)." : "";
+      throw show(`Razorpay refused this (${res.status}${d ? ": " + d : ""}).${hint}`, 400);
+    }
     return data;
   }
 
