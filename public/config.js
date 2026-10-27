@@ -2,12 +2,12 @@
 // Firebase console → Project settings → Your apps → Web app. Paste your values below.
 // While apiKey still starts with "PASTE", the app runs in DEMO MODE with sample titles and no real payments.
 export const firebaseConfig = {
-  apiKey: "PASTE_API_KEY",
-  authDomain: "PASTE.firebaseapp.com",
-  projectId: "PASTE",
-  storageBucket: "PASTE.firebasestorage.app",
-  messagingSenderId: "PASTE",
-  appId: "PASTE",
+  apiKey: "AIzaSyC8QOEWeLIijqUXZ3MMveX-HefQyVLQPHc",
+  authDomain: "lifeofline-movies.firebaseapp.com",
+  projectId: "lifeofline-movies",
+  storageBucket: "lifeofline-movies.firebasestorage.app",
+  messagingSenderId: "52147879379",
+  appId: "1:52147879379:web:4a4da82b863dc758744326",
 };
 
 // ── 2. The API on Render, posters (Cloudinary) ─────────────────────────────────
