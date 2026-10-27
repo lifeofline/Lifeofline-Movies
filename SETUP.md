@@ -65,6 +65,19 @@ Nothing new: copy `BREVO_API_KEY` from ArtistCart's `kalakaar-notify` service on
 3. **Admin → Add a title**: fill the details, pick the age rating and content descriptor, upload a poster, save. Then upload episodes (or the film). Press **Check video** until it says Ready, tick **Published**, save.
 4. **Admin → Free Premium** gives cast, crew and testers free access by email.
 
+## Own web address: movies.lifeofline.com
+
+Razorpay only takes payments from the website registered on the account (lifeofline.com), so the app runs at `movies.lifeofline.com`.
+
+1. Render → **lifeofline-movies** (the static site) → **Settings → Custom Domains → Add** → `movies.lifeofline.com`. Render shows a CNAME target like `lifeofline-movies.onrender.com`.
+2. At the company where lifeofline.com's DNS is managed, add a record: **Type** CNAME · **Name/Host** `movies` · **Value/Points to** the target Render showed · TTL default.
+3. Back in Render, press **Verify**. The HTTPS certificate follows within minutes to an hour.
+4. Firebase → Authentication → Settings → Authorized domains → add `movies.lifeofline.com`.
+5. Render → **lifeofline-movies-api → Environment** → `APP_URL` = `https://movies.lifeofline.com` (links in emails).
+6. Razorpay → Account & Settings → website / app details: add `https://movies.lifeofline.com` if Razorpay asks for each subdomain.
+
+Visitors on the old onrender.com address are moved to the new one automatically once it works.
+
 ## Before launch
 
 - Render → `lifeofline-movies-api` → **Settings → Instance type → Starter** so the first play is never delayed by a cold start.

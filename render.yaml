@@ -33,7 +33,7 @@ services:
       - key: NODE_VERSION
         value: "20"
       - key: APP_URL
-        value: https://lifeofline-movies.onrender.com
+        value: https://movies.lifeofline.com
       - key: FIREBASE_SERVICE_ACCOUNT   # the whole JSON key file from the NEW Firebase project
         sync: false
       - key: ADMIN_EMAILS               # emails allowed to make themselves admin (comma-separated)
