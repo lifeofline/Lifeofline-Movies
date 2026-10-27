@@ -94,11 +94,11 @@ module.exports = function makeBilling({ db, FieldValue, env, sendEmail, link }) 
       if (MODE === "subscription") {
         const sub = await rzp("POST", "/v1/subscriptions", { plan_id: await planId(), total_count: 120, customer_notify: 1, notes: { uid, app: "lifeofline-movies" } });
         await ref(uid).set({ pendingSubId: sub.id, updatedAt: now() }, { merge: true });
-        return { mode, keyId: KEY, subscriptionId: sub.id, price: PRICE };
+        return { mode: MODE, keyId: KEY, subscriptionId: sub.id, price: PRICE };
       }
       const order = await rzp("POST", "/v1/orders", { amount: PRICE * 100, currency: "INR", receipt: ("lm_" + uid).slice(0, 40), notes: { uid, app: "lifeofline-movies" } });
       await db.doc(`passOrders/${order.id}`).set({ uid, amount: PRICE, status: "created", createdAt: now() });
-      return { mode, keyId: KEY, orderId: order.id, price: PRICE };
+      return { mode: MODE, keyId: KEY, orderId: order.id, price: PRICE };
     },
 
     // After the Razorpay window closes successfully: check the signature, then switch Premium on.
@@ -109,7 +109,7 @@ module.exports = function makeBilling({ db, FieldValue, env, sendEmail, link }) 
         const s = (await ref(uid).get()).data() || {};
         const subId = String(b.razorpay_subscription_id || "");
         if (!s.pendingSubId || subId !== s.pendingSubId || !same(hmac(`${pid}|${subId}`), sig)) throw show("We couldn't confirm this payment. If money was taken, it will be refunded automatically.");
-        return { until: await grant(uid, { mode, days: 31, rzpSubId: subId, paymentId: pid }) };
+        return { until: await grant(uid, { mode: "subscription", days: 31, rzpSubId: subId, paymentId: pid }) };
       }
       const orderId = String(b.razorpay_order_id || "");
       const o = (await db.doc(`passOrders/${orderId}`).get()).data();
