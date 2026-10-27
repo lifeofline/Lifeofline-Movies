@@ -1,0 +1,63 @@
+# Render Blueprint: creates both parts of Lifeofline Movies in one go (Render → New → Blueprint → pick this repo).
+services:
+  # The app people open on phones, computers and TVs. Free static site.
+  - type: web
+    name: lifeofline-movies
+    runtime: static
+    buildCommand: echo "No build needed"
+    staticPublishPath: ./public
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: no-cache
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+    routes:
+      - type: rewrite
+        source: /.well-known/assetlinks.json
+        destination: /assetlinks.json
+
+  # The API: playback links, Premium payments, video uploads, emails.
+  # Starts on the free plan (it sleeps after 15 idle minutes and takes up to a minute to wake).
+  # Before launch, switch it to Starter ($7/month) in Render so the first play is never slow.
+  - type: web
+    name: lifeofline-movies-api
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: APP_URL
+        value: https://lifeofline-movies.onrender.com
+      - key: FIREBASE_SERVICE_ACCOUNT   # the whole JSON key file from the NEW Firebase project
+        sync: false
+      - key: ADMIN_EMAILS               # emails allowed to make themselves admin (comma-separated)
+        value: ibmhclms@gmail.com
+      # Video (Cloudflare Stream). Leave empty to run in test mode with a sample video.
+      - key: CF_ACCOUNT_ID
+        sync: false
+      - key: CF_STREAM_TOKEN
+        sync: false
+      - key: CF_STREAM_CUSTOMER_CODE    # the "customer-xxxx" part of your Stream video links (optional)
+        sync: false
+      # Payments (Razorpay, same Lifeofline Pvt Ltd account as ArtistCart). Empty = test mode.
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
+      - key: RAZORPAY_SUBSCRIPTIONS     # "on" once Razorpay has switched on Subscriptions (auto-renew). Otherwise 30-day passes.
+        value: "off"
+      # Email (Brevo, same account as ArtistCart)
+      - key: BREVO_API_KEY
+        sync: false
+      - key: MAIL_FROM_EMAIL
+        value: ibmhclms@gmail.com
+      - key: MAIL_FROM_NAME
+        value: Lifeofline Movies

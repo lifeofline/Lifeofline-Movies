@@ -1,0 +1,434 @@
+// Lifeofline Movies — the app people open on phones, computers and TVs.
+// Hash routes: #home #reels #movies #series #search #t/<titleId> #plans #account #signin #grievance #admin
+import { firebaseConfig, appConfig } from "./config.js";
+import { $, $$, esc, day, dur, posterStyle, loadScript, toast, isTV } from "./util.js";
+import { LANGS, KINDS, KIDS_OK, freeEpisode } from "./access.js";
+import { openPlayer } from "./player.js";
+
+const DEMO = String(firebaseConfig.apiKey || "").startsWith("PASTE");
+const api = DEMO ? (await import("./api-demo.js")).createDemoApi() : (await import("./api-firebase.js")).createFirebaseApi(firebaseConfig, appConfig);
+const PRICE = 99;
+
+/* ---------- state ---------- */
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("lm_" + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("lm_" + k, JSON.stringify(v)); } catch { /* private mode */ } },
+};
+const S = {
+  user: null, profile: null, premium: false, sub: null, billing: DEMO ? "test" : "", admin: false,
+  titles: [], progress: {}, list: [], ads: [],
+  lang: store.get("lang", "All"), kids: store.get("kids", null), tv: store.get("tv", isTV()), heroI: 0, ready: false,
+  after: null, // where to go after signing in
+};
+const visible = () => S.titles.filter((t) => !S.kids?.on || KIDS_OK.has(t.rating || "U"));
+const byId = (id) => S.titles.find((t) => t.id === id);
+const inLang = (list) => (S.lang === "All" ? list : list.filter((t) => t.lang === S.lang));
+
+async function loadCatalogue() {
+  const [titles, ads] = await Promise.all([api.titles().catch(() => []), api.ads().catch(() => [])]);
+  S.titles = titles; S.ads = ads;
+}
+async function loadMine() {
+  if (!S.user) { S.progress = {}; S.list = []; S.premium = false; S.sub = null; S.admin = false; S.profile = null; return; }
+  const [progress, list, st, admin, profile] = await Promise.all([
+    api.getProgress().catch(() => ({})), api.myList().catch(() => []),
+    api.subStatus().catch(() => null), api.isAdmin().catch(() => false), api.profile().catch(() => null),
+  ]);
+  Object.assign(S, { progress, list, admin, profile });
+  if (st) { S.premium = st.premium; S.sub = st.sub; S.billing = st.mode; }
+}
+
+/* ---------- shell ---------- */
+const NAV = [["home", "Home"], ["reels", "Reels"], ["movies", "Movies"], ["series", "Series"], ["search", "Search"], ["plans", "Plans"]];
+const TABS = [["home", "Home", "M3 11 12 4l9 7v9h-6v-6H9v6H3z"], ["reels", "Reels", "M8 2h8a3 3 0 0 1 3 3v14a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V5a3 3 0 0 1 3-3zm2 7v6l5-3z"], ["search", "Search", "M10.5 4a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13zm5 11.5L20 20"], ["movies", "Movies", "M3 6h18v13H3zM3 10h18M8 6v4M13 6v4M18 6v4"], ["account", "Account", "M12 4a4 4 0 1 1 0 8 4 4 0 0 1 0-8zM4 21c1-4 4-6 8-6s7 2 8 6"]];
+
+function shell(route) {
+  $("#nav").innerHTML = NAV.map(([k, l]) => `<a href="#${k}" data-nav class="${route === k ? "on" : ""}">${l}</a>`).join("");
+  $("#tabbar").innerHTML = TABS.map(([k, l, d]) => `<a href="#${k}" class="${route === k ? "on" : ""}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="${d}"/></svg>${l}</a>`).join("");
+  $("#tabbar").hidden = false;
+  $("#me").innerHTML = S.premium ? `<a href="#account" class="badge prem" data-nav>Premium</a>`
+    : `<a href="#plans" class="btn gold sm" data-nav>Subscribe ${"₹" + PRICE}</a>`;
+  $("#acct").innerHTML = S.user ? `<a href="#account" class="avatar" data-nav aria-label="Account">${esc((S.user.name || "?").slice(0, 1).toUpperCase())}</a>` : `<a href="#signin" class="btn ghost sm" data-nav>Sign in</a>`;
+  $("#demo").hidden = !DEMO;
+  document.body.classList.toggle("tv", !!S.tv);
+  document.body.classList.toggle("kids", !!S.kids?.on);
+}
+
+/* ---------- pieces ---------- */
+function tile(t, shape = "tall") {
+  const p = S.progress[t.id];
+  const tag = t.premium ? `<span class="tag prem">Premium</span>` : `<span class="tag">Free</span>`;
+  const pct = p?.dur ? Math.min(100, (p.pos / p.dur) * 100) : 0;
+  return `<a class="tile" href="#t/${esc(t.id)}" data-nav aria-label="${esc(t.title)}">
+    <div class="poster ${shape}" style="${posterStyle(t)}">${tag}${t.format === "v" ? '<span class="tag r">9:16</span>' : ""}${t.poster ? "" : `<div class="pt">${esc(t.title)}</div>`}</div>
+    ${p ? `<div class="prog"><i style="width:${pct}%"></i></div>` : ""}
+    <div class="cap">${t.poster ? `<b>${esc(t.title)}</b>` : ""}<span>${esc(KINDS[t.kind] || "")} · ${esc(t.lang || "")}</span></div></a>`;
+}
+function rail(title, items, { shape = "tall", sub = "", more = "" } = {}) {
+  if (!items.length) return "";
+  return `<section class="rail"><div class="rail-h"><h2>${title}</h2>${more ? `<a href="${more}" data-nav>See all</a>` : `<span>${sub}</span>`}</div>
+    <div class="track ${shape}">${items.map((t) => tile(t, shape)).join("")}</div></section>`;
+}
+const chips = () => `<div class="chips" role="group" aria-label="Language">${["All", ...LANGS.filter((l) => S.titles.some((t) => t.lang === l))].map((l) => `<button class="chip ${S.lang === l ? "on" : ""}" data-lang="${esc(l)}" data-nav>${l === "All" ? "All languages" : esc(l)}</button>`).join("")}</div>`;
+const empty = (msg, cta = "") => `<div class="empty"><p>${msg}</p>${cta}</div>`;
+
+/* ---------- views ---------- */
+function vHome() {
+  const all = visible();
+  if (!all.length) return empty(S.ready ? (S.admin ? "No titles published yet. Add the first one in Admin." : "New titles are on the way. Check back soon.") : `<span class="spin"></span>`, S.admin ? `<a class="btn gold" href="#admin">Open Admin</a>` : "");
+  const feat = all.filter((t) => t.original).slice(0, 6); const pool = feat.length ? feat : all.slice(0, 6);
+  const h = pool[S.heroI % pool.length];
+  const cont = Object.entries(S.progress).sort((a, b) => b[1].at - a[1].at).map(([id]) => byId(id)).filter(Boolean).filter((t) => visible().includes(t));
+  const list = S.list.map(byId).filter(Boolean);
+  const L = inLang(all);
+  return `<section class="hero">
+      <div class="hart" style="${posterStyle(h)}"></div><div class="hshade"></div>
+      <div class="hcopy">
+        <span class="eyebrow">${h.original ? "Lifeofline Original · " : ""}${esc(KINDS[h.kind] || "")}</span>
+        <h1>${esc(h.title)}</h1>
+        <div class="meta"><span class="rating">${esc(h.rating)}</span><span>${esc(h.genre || "")}</span><span>${esc(h.lang || "")}</span></div>
+        <p>${esc(h.desc || "")}</p>
+        <div class="row"><button class="btn gold" data-play="${esc(h.id)}" data-nav>▶ Play</button><a class="btn ghost" href="#t/${esc(h.id)}" data-nav>Details</a></div>
+      </div>
+      ${pool.length > 1 ? `<div class="dots">${pool.map((_, i) => `<button aria-label="Featured ${i + 1}" class="${i === S.heroI % pool.length ? "on" : ""}" data-hero="${i}"></button>`).join("")}</div>` : ""}
+    </section>
+    ${chips()}
+    ${rail("Continue watching", cont, { shape: "wide" })}
+    ${rail("Reels · short dramas", L.filter((t) => t.kind === "short"), { more: "#reels", sub: "Two-minute episodes" })}
+    ${S.premium || S.kids?.on ? "" : `<div class="strip"><div class="price">₹${PRICE}<small> / month</small></div><p>Every title, no ads, Full HD, on your phone, computer and TV. Cancel anytime.</p><a class="btn gold" href="#plans" data-nav>See the plan</a></div>`}
+    ${rail("My List", list, { shape: "tall" })}
+    ${rail("Lifeofline Originals", L.filter((t) => t.original && t.kind !== "short"), { shape: "wide" })}
+    ${rail("Movies", L.filter((t) => t.kind === "movie"), { shape: "wide", more: "#movies" })}
+    ${rail("Web series", L.filter((t) => t.kind === "series"), { shape: "wide", more: "#series" })}
+    ${rail("Free with ads", L.filter((t) => !t.premium), { sub: "No plan needed" })}
+    ${L.length ? "" : empty(`Nothing in ${esc(S.lang)} yet.`)}`;
+}
+
+function vGrid(kind) {
+  const items = inLang(visible().filter((t) => (kind === "movies" ? t.kind === "movie" : t.kind !== "movie")));
+  return `<div class="ptitle"><h1>${kind === "movies" ? "Movies" : "Series and short dramas"}</h1><span>${items.length} titles</span></div>${chips()}
+    <div class="grid">${items.map((t) => tile(t, "tall")).join("")}</div>${items.length ? "" : empty("Nothing here yet.")}`;
+}
+
+function vReels() {
+  const items = inLang(visible().filter((t) => t.kind === "short"));
+  if (!items.length) return `${chips()}${empty("No short dramas yet.")}`;
+  return `<div class="reels" id="reels">${items.map((t) => {
+    const p = S.progress[t.id];
+    return `<section class="reel"><div class="rframe" style="${posterStyle(t)}">
+      <div class="rover"><span class="eyebrow">${esc(t.genre || "")} · ${t.episodeCount || "?"} episodes</span><h3>${esc(t.title)}</h3><p>${esc(t.desc || "")}</p>
+        <div class="row"><button class="btn gold" data-play="${esc(t.id)}" data-nav>▶ ${p ? `Continue ep ${p.n}` : "Watch ep 1"}</button>${!S.premium && t.premium ? `<span class="free">Ep 1–${t.freeEps ?? 3} free</span>` : ""}</div></div>
+      <div class="rside"><button data-listtog="${esc(t.id)}" aria-label="My List" data-nav>${S.list.includes(t.id) ? "✓" : "＋"}</button><span>My List</span>
+        <a href="#t/${esc(t.id)}" aria-label="All episodes" data-nav>≡</a><span>Episodes</span>
+        <button data-share="${esc(t.id)}" aria-label="Share" data-nav>↗</button><span>Share</span></div>
+    </div></section>`;
+  }).join("")}</div>`;
+}
+
+function vSearch(q = "") {
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+  const hits = words.length ? visible().filter((t) => words.every((w) => `${t.title} ${t.genre} ${t.lang} ${t.desc} ${(t.cast || []).join(" ")}`.toLowerCase().includes(w))) : [];
+  return `<div class="ptitle"><h1>Search</h1></div>
+    <label class="search"><span class="sr">Search titles</span><input id="q" type="search" placeholder="Titles, genres, languages, actors" value="${esc(q)}" autocomplete="off" data-nav></label>
+    <div class="grid" id="hits">${(words.length ? hits : visible().slice(0, 12)).map((t) => tile(t)).join("")}</div>
+    ${words.length && !hits.length ? empty(`No titles match “${esc(q)}”.`) : ""}`;
+}
+
+async function vTitle(id) {
+  const t = byId(id) || (await api.title(id).catch(() => null));
+  if (!t) return empty("This title isn't available.", `<a class="btn ghost" href="#home">Go home</a>`);
+  if (S.kids?.on && !KIDS_OK.has(t.rating)) return empty(`This title is rated ${esc(t.rating)}. Leave Kids mode to watch it.`, `<a class="btn ghost" href="#account">Account</a>`);
+  const eps = await api.episodes(id).catch(() => []);
+  S.eps = { id, eps };
+  const p = S.progress[id];
+  const first = p ? eps.find((e) => e.id === p.epId) || eps[0] : eps[0];
+  const locked = (e) => !S.premium && !freeEpisode(t, e);
+  const note = !S.premium && t.premium ? (t.kind === "short" ? `Episodes 1–${t.freeEps ?? 3} are free with ads. The rest are in the ₹${PRICE} plan.`
+    : t.kind === "series" ? `Episode 1 is free with ads. The rest are in the ₹${PRICE} plan.` : `This movie is in the ₹${PRICE} plan.${t.trailerUid ? " The trailer is free." : ""}`) : "";
+  const runtime = t.kind === "movie" ? dur(eps[0]?.duration) : `${eps.length} episode${eps.length === 1 ? "" : "s"}`;
+  return `<div class="detail ${t.format === "v" ? "v" : ""}">
+    <div class="dposter" style="${posterStyle(t)}">${t.poster ? "" : `<div class="pt">${esc(t.title)}</div>`}</div>
+    <div class="dbody">
+      <span class="eyebrow">${t.original ? "Lifeofline Original · " : ""}${esc(KINDS[t.kind] || "")}${t.format === "v" ? " · vertical" : ""}</span>
+      <h1>${esc(t.title)}</h1>
+      <div class="meta"><span class="rating" title="Age rating">${esc(t.rating)}</span><span>${esc(t.genre || "")}</span><span>${esc(t.lang || "")}</span>${runtime ? `<span>${esc(runtime)}</span>` : ""}${t.year ? `<span>${esc(t.year)}</span>` : ""}</div>
+      ${t.descriptor ? `<p class="descr">Content: ${esc(t.descriptor)}</p>` : ""}
+      <p class="desc">${esc(t.desc || "")}</p>
+      ${t.cast?.length ? `<p class="small">Cast: ${esc(t.cast.join(", "))}</p>` : ""}
+      <div class="row">
+        ${first ? `<button class="btn gold" data-play="${esc(t.id)}" data-ep="${esc(first.id)}" data-nav>▶ ${p ? (t.kind === "movie" ? "Resume" : `Continue ep ${first.n}`) : t.kind === "movie" ? "Play" : "Play episode 1"}</button>` : `<span class="small">Coming soon</span>`}
+        ${t.trailerUid ? `<button class="btn ghost" data-trailer="${esc(t.id)}" data-nav>Trailer</button>` : ""}
+        <button class="btn ghost" data-listtog="${esc(t.id)}" data-nav>${S.list.includes(t.id) ? "✓ In My List" : "＋ My List"}</button>
+        <button class="btn ghost" data-share="${esc(t.id)}" data-nav>Share</button>
+      </div>
+      ${note ? `<p class="small">${note} ${S.user ? "" : ""}<a href="#plans">See the plan</a></p>` : ""}
+      ${t.kind !== "movie" && eps.length ? `<h3>Episodes</h3><div class="eps">${eps.map((e) => {
+        const ep = S.progress[id]?.epId === e.id ? S.progress[id] : null;
+        return `<button class="ep" data-play="${esc(t.id)}" data-ep="${esc(e.id)}" data-nav>
+          <span class="n">${String(e.n).padStart(2, "0")}</span>
+          <span class="thumb" style="${posterStyle(t)}"></span>
+          <span class="info"><b>${esc(e.name || "Episode " + e.n)}</b><span>${esc(dur(e.duration))}${ep ? " · watching" : ""}</span></span>
+          ${locked(e) ? `<span class="lock">₹${PRICE} plan</span>` : !S.premium ? `<span class="free">Free · ads</span>` : ""}</button>`;
+      }).join("")}</div>` : ""}
+    </div></div>`;
+}
+
+function vPlans() {
+  const s = S.sub, active = S.premium;
+  return `<div class="ptitle"><div><span class="eyebrow">Plans</span><h1>One price. Everything unlocked.</h1></div></div>
+  <div class="plans">
+    <div class="plan"><span class="pk">Always free</span><h3>Free with ads</h3><div class="amt">₹0</div>
+      <ul><li>Free titles and first episodes</li><li>Short ad breaks</li><li>Phone, computer and TV</li><li class="no">Premium titles</li></ul>
+      <a class="btn ghost" href="#home" data-nav>Keep watching free</a></div>
+    <div class="plan hl"><span class="pk gold">Premium</span><h3>Premium Monthly</h3><div class="amt">₹${PRICE}<small> / month</small></div>
+      <ul><li>Every movie, series and short drama</li><li>No ads</li><li>Full HD</li><li>Phone, computer and TV</li><li>Cancel anytime</li></ul>
+      ${active ? `<a class="btn" href="#account" data-nav>Your plan · till ${day(s?.until)}</a>` : `<button class="btn gold" data-subscribe data-nav>Subscribe for ₹${PRICE}</button>`}
+      <p class="small">${S.billing === "subscription" ? "Renews monthly through UPI Autopay, card or netbanking. You get a notice before each charge." : S.billing === "pass" ? "30 days of Premium. We'll remind you before it ends; pay again to renew." : DEMO ? "Demo mode: no money is taken." : "Pay with UPI, card or netbanking."}</p></div>
+    <div class="plan soon"><span class="pk">Coming later</span><h3>Yearly and Family + TV</h3><ul><li>A yearly plan with about 3 months free</li><li>More screens and profiles for the whole family</li></ul></div>
+  </div>
+  <p class="small">Prices include GST. Lifeofline Movies is run by Lifeofline Pvt Ltd. <a href="refund.html">Cancellation and refunds</a> · <a href="terms.html">Terms</a></p>`;
+}
+
+function vSignin(mode = "in") {
+  const up = mode === "up", reset = mode === "reset";
+  return `<div class="auth"><span class="eyebrow">Lifeofline Movies</span><h1>${up ? "Create your account" : reset ? "Reset your password" : "Sign in"}</h1>
+    <form id="authf" novalidate>
+      ${up ? `<label class="f">Your name<input id="an" autocomplete="name" required maxlength="60" data-nav></label>` : ""}
+      <label class="f">Email<input id="ae" type="email" autocomplete="email" required data-nav></label>
+      ${reset ? "" : `<label class="f">Password<input id="ap" type="password" autocomplete="${up ? "new-password" : "current-password"}" minlength="6" required data-nav></label>`}
+      <p class="err" id="aerr" hidden></p>
+      <button class="btn gold wide" type="submit" data-nav>${up ? "Create account" : reset ? "Email me a reset link" : "Sign in"}</button>
+    </form>
+    ${reset ? "" : `<button class="btn ghost wide" data-google data-nav>Continue with Google</button>`}
+    <p class="small">${up ? `Have an account? <a href="#signin">Sign in</a>` : `New here? <a href="#signup">Create an account</a>`}${up || reset ? "" : ` · <a href="#reset">Forgot password?</a>`}</p>
+    ${up ? `<p class="small">By continuing you agree to the <a href="terms.html">Terms</a> and <a href="privacy.html">Privacy Policy</a>.</p>` : ""}</div>`;
+}
+
+function vAccount() {
+  if (!S.user) return vSignin("in");
+  const s = S.sub;
+  const planLine = S.premium ? (s?.status === "cancelling" ? `Premium till ${day(s.until)} · won't renew` : s?.mode === "subscription" ? `Premium · ₹${PRICE}/month · renews automatically` : `Premium till ${day(s?.until)}`) : "Free with ads";
+  const adult = S.profile?.adult;
+  return `<div class="ptitle"><h1>Account</h1>${S.premium ? `<span class="badge prem">Premium</span>` : `<span class="badge free">Free with ads</span>`}</div>
+  <div class="cards">
+    <div class="card"><h3>${esc(S.user.name || "You")}</h3><div class="kv"><span>Email</span><span>${esc(S.user.email || "")}</span></div>
+      ${S.user.emailVerified || DEMO ? "" : `<p class="small">Check your inbox to verify your email. <button class="link" data-verify>Send again</button></p>`}
+      <button class="btn ghost" data-signout data-nav>Sign out</button></div>
+    <div class="card"><h3>Plan</h3><div class="kv"><span>Current plan</span><span>${esc(planLine)}</span></div>
+      ${S.premium ? (s?.status === "cancelling" ? `<a class="btn gold" href="#plans" data-nav>Renew</a>` : s?.mode === "subscription" || s?.mode === "test" ? `<button class="btn ghost" data-cancel data-nav>Cancel renewal</button>` : `<a class="btn ghost" href="#plans" data-nav>Renew early</a>`) : `<a class="btn gold" href="#plans" data-nav>Get Premium for ₹${PRICE}</a>`}</div>
+    <div class="card"><h3>Age</h3>
+      ${adult == null ? `<p class="small">Add your date of birth to watch titles rated A (18+). It can't be changed later.</p>
+        <label class="f">Date of birth<input type="date" id="dob" max="${new Date().toISOString().slice(0, 10)}" data-nav></label><button class="btn ghost" data-dob data-nav>Save</button>`
+        : `<div class="kv"><span>Titles rated A</span><span>${adult ? "Allowed" : "Not allowed (under 18)"}</span></div>`}</div>
+    <div class="card"><h3>Kids mode</h3><p class="small">Shows only titles rated U and U/A 7+ on this device. A 4-digit PIN is needed to leave it.</p>
+      ${S.kids?.on ? `<button class="btn ghost" data-kidsoff data-nav>Leave Kids mode</button>` : `<label class="f">Choose a 4-digit PIN<input id="kpin" inputmode="numeric" maxlength="4" pattern="\\d{4}" autocomplete="off" data-nav></label><button class="btn ghost" data-kidson data-nav>Turn on Kids mode</button>`}</div>
+    <div class="card"><h3>This device</h3><div class="kv"><span>TV layout</span><span>${S.tv ? "On" : "Off"}</span></div>
+      <p class="small">Big tiles and remote-control arrows. Turns on by itself on Android TV, Fire TV and smart TVs.</p><button class="btn ghost" data-tvtog data-nav>${S.tv ? "Turn off" : "Turn on"} TV layout</button></div>
+    <div class="card"><h3>Help</h3><p class="small">Questions, complaints about a title or a payment problem: we reply within 24 hours and resolve within 15 days.</p>
+      <a class="btn ghost" href="#grievance" data-nav>Contact the grievance officer</a>
+      ${S.admin ? `<a class="btn gold" href="#admin" data-nav>Open Admin</a>` : `<button class="link small" data-claim>I'm on the admin list</button>`}</div>
+  </div>`;
+}
+
+function vGrievance() {
+  return `<div class="auth wide"><span class="eyebrow">Grievance redressal</span><h1>Tell us what went wrong</h1>
+    <p class="small">Lifeofline Pvt Ltd · Grievance Officer · ${esc(appConfig.supportEmail || "")}<br>We acknowledge every complaint within 24 hours and decide within 15 days, as the IT Rules 2021 require. Read our <a href="content-policy.html">content classification policy</a>.</p>
+    <form id="grf" novalidate>
+      <label class="f">Your name<input id="gn" required maxlength="80" value="${esc(S.user?.name || "")}" data-nav></label>
+      <label class="f">Email for our reply<input id="ge" type="email" required value="${esc(S.user?.email || "")}" data-nav></label>
+      <label class="f">Title it is about (optional)<input id="gt" maxlength="120" data-nav></label>
+      <label class="f">What happened<textarea id="gx" rows="6" required maxlength="3000" data-nav></textarea></label>
+      <p class="err" id="gerr" hidden></p>
+      <button class="btn gold" type="submit" data-nav>Send</button>
+    </form></div>`;
+}
+
+/* ---------- router ---------- */
+let renderSeq = 0;
+async function route() {
+  const seq = ++renderSeq;
+  const h = decodeURIComponent((location.hash || "#home").slice(1));
+  const [r, arg] = h.split("/");
+  let html = "", tab = r;
+  if (r === "t") { html = await vTitle(arg); tab = ""; }
+  else if (r === "reels") html = vReels();
+  else if (r === "movies" || r === "series") html = vGrid(r);
+  else if (r === "search") html = vSearch(S.q || "");
+  else if (r === "plans") html = vPlans();
+  else if (r === "account") html = vAccount();
+  else if (r === "signin" || r === "signup" || r === "reset") { html = S.user ? vAccount() : vSignin(r === "signup" ? "up" : r === "reset" ? "reset" : "in"); tab = "account"; }
+  else if (r === "grievance") html = vGrievance();
+  else if (r === "admin") {
+    if (!S.admin) html = empty("Admins only.", `<a class="btn ghost" href="#account">Account</a>`);
+    else { const m = await import("./admin.js"); if (seq !== renderSeq) return; html = `<div id="adm"></div>`; setTimeout(() => m.mountAdmin($("#adm"), { api, S, reload: async () => { await loadCatalogue(); } }), 0); }
+  } else { html = vHome(); tab = "home"; }
+  if (seq !== renderSeq) return;
+  $("#app").innerHTML = html;
+  shell(tab === "signin" ? "account" : tab);
+  if (r !== "t" && !S.keepScroll) window.scrollTo(0, 0);
+  S.keepScroll = false;
+  if (S.tv) setTimeout(() => { const f = $("#app [data-nav]"); if (f && !document.activeElement?.closest("#app")) f.focus({ preventScroll: true }); }, 30);
+  if (r === "search") { const q = $("#q"); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
+}
+window.addEventListener("hashchange", () => { if (history.state?.player) return; route(); });
+
+/* ---------- actions ---------- */
+async function play(titleId, epId, trailer = false) {
+  const t = byId(titleId) || (await api.title(titleId));
+  if (!t) return toast("This title isn't available.");
+  const eps = S.eps?.id === titleId ? S.eps.eps : await api.episodes(titleId).catch(() => []);
+  S.eps = { id: titleId, eps };
+  const p = S.progress[titleId];
+  if (!epId && !trailer) epId = p?.epId || eps[0]?.id;
+  const startAt = !trailer && p && p.epId === epId && p.pos < (p.dur || 0) - 30 ? p.pos : 0;
+  openPlayer({
+    api, title: t, episodes: eps, epId, trailer, startAt, ads: S.ads,
+    onNeedPlan: () => { location.hash = "#plans"; },
+    onNeedSignIn: () => { S.after = location.hash || "#home"; location.hash = "#signin"; },
+    onNeedAge: () => { location.hash = "#account"; },
+    onClosed: async () => { if (S.user) { S.progress = await api.getProgress().catch(() => S.progress); S.keepScroll = true; route(); } },
+  });
+}
+
+async function subscribe(btn) {
+  if (!S.user) { S.after = "#plans"; toast("Sign in or create an account first."); location.hash = "#signup"; return; }
+  if (btn) btn.disabled = true;
+  try {
+    const o = await api.subStart();
+    if (o.mode === "test") return confirmSheet(`<span class="eyebrow">${DEMO ? "Demo mode" : "Test mode"}</span><h2>Start Premium?</h2><p>No money is taken${DEMO ? " in the demo" : " until Razorpay keys are added on Render"}.</p>`, "Start Premium", async () => { await api.subVerify({}); await afterPaid(); });
+    await loadScript("https://checkout.razorpay.com/v1/checkout.js");
+    const opts = {
+      key: o.keyId, name: "Lifeofline Movies", description: o.mode === "subscription" ? `Premium · ₹${o.price}/month` : `Premium · 30 days`,
+      prefill: { name: S.user.name, email: S.user.email }, theme: { color: "#f4ad3d" },
+      handler: async (r) => { try { await api.subVerify(r); await afterPaid(); } catch (e) { toast(e.message, 5000); } },
+      modal: { ondismiss: () => { if (btn) btn.disabled = false; } },
+    };
+    if (o.mode === "subscription") opts.subscription_id = o.subscriptionId; else { opts.order_id = o.orderId; opts.amount = o.price * 100; opts.currency = "INR"; }
+    new window.Razorpay(opts).open();
+  } catch (e) { toast(e.message, 4000); }
+  finally { if (btn) btn.disabled = false; }
+}
+async function afterPaid() { await loadMine(); toast("You're Premium. Everything is unlocked and ads are off.", 4000); location.hash = "#home"; route(); }
+
+// In-page confirmation (no browser dialogs).
+function confirmSheet(html, okLabel, onOk) {
+  const ov = document.createElement("div"); ov.className = "sheet-ov";
+  ov.innerHTML = `<div class="sheet" role="dialog">${html}<p class="err" hidden></p><div class="row"><button class="btn gold" data-ok>${esc(okLabel)}</button><button class="btn ghost" data-no>Cancel</button></div></div>`;
+  document.body.append(ov);
+  const close = () => ov.remove();
+  ov.addEventListener("click", async (e) => {
+    if (e.target === ov || e.target.closest("[data-no]")) return close();
+    if (e.target.closest("[data-ok]")) { const b = e.target.closest("[data-ok]"); b.disabled = true; try { await onOk(ov); close(); } catch (er) { const p = $(".err", ov); p.textContent = er.message; p.hidden = false; b.disabled = false; } }
+  });
+  $("[data-ok]", ov).focus();
+  return ov;
+}
+
+const pinHash = async (pin) => { const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("lm-kids:" + pin)); return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join(""); };
+
+document.addEventListener("click", async (e) => {
+  const el = e.target.closest("[data-play],[data-trailer],[data-lang],[data-hero],[data-listtog],[data-share],[data-subscribe],[data-signout],[data-cancel],[data-dob],[data-kidson],[data-kidsoff],[data-tvtog],[data-google],[data-verify],[data-claim],[data-demo-reset]");
+  if (!el) return;
+  if (el.dataset.play) return play(el.dataset.play, el.dataset.ep);
+  if (el.dataset.trailer) return play(el.dataset.trailer, null, true);
+  if (el.dataset.lang) { S.lang = el.dataset.lang; store.set("lang", S.lang); S.keepScroll = true; return route(); }
+  if (el.dataset.hero) { S.heroI = Number(el.dataset.hero); S.keepScroll = true; return route(); }
+  if (el.dataset.listtog) {
+    try { const on = await api.toggleList(el.dataset.listtog); S.list = on ? [el.dataset.listtog, ...S.list] : S.list.filter((x) => x !== el.dataset.listtog); toast(on ? "Added to My List" : "Removed from My List"); S.keepScroll = true; route(); }
+    catch (er) { if (er.needSignIn) { S.after = location.hash; location.hash = "#signin"; } toast(er.message); }
+    return;
+  }
+  if (el.dataset.share) {
+    const t = byId(el.dataset.share); const url = `${location.origin}${location.pathname}#t/${el.dataset.share}`;
+    try { if (navigator.share) await navigator.share({ title: t?.title, text: `Watch ${t?.title} on Lifeofline Movies`, url }); else { await navigator.clipboard.writeText(url); toast("Link copied"); } } catch { /* cancelled */ }
+    return;
+  }
+  if (el.hasAttribute("data-subscribe")) return subscribe(el);
+  if (el.hasAttribute("data-signout")) { await api.signOut(); toast("Signed out"); location.hash = "#home"; return; }
+  if (el.hasAttribute("data-cancel")) return confirmSheet(`<h2>Cancel renewal?</h2><p>You keep Premium till ${day(S.sub?.until)}. After that, free titles still play with ads.</p>`, "Cancel renewal", async () => { await api.subCancel(); await loadMine(); toast("Renewal cancelled"); route(); });
+  if (el.hasAttribute("data-dob")) {
+    const v = $("#dob")?.value; if (!v) return toast("Pick your date of birth.");
+    return confirmSheet(`<h2>Save ${esc(new Date(v).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }))}?</h2><p>Your date of birth can't be changed later.</p>`, "Save", async () => { const r = await api.setDob(v); S.profile = { ...(S.profile || {}), adult: r.adult }; toast("Saved"); route(); });
+  }
+  if (el.hasAttribute("data-kidson")) {
+    const pin = $("#kpin")?.value || ""; if (!/^\d{4}$/.test(pin)) return toast("Enter 4 digits for the PIN.");
+    S.kids = { on: true, pin: await pinHash(pin) }; store.set("kids", S.kids); toast("Kids mode is on"); location.hash = "#home"; return route();
+  }
+  if (el.hasAttribute("data-kidsoff")) {
+    return confirmSheet(`<h2>Leave Kids mode</h2><label class="f">PIN<input id="kout" inputmode="numeric" maxlength="4" autocomplete="off"></label>`, "Leave Kids mode", async (ov) => {
+      if ((await pinHash($("#kout", ov).value)) !== S.kids.pin) throw new Error("That PIN isn't right.");
+      S.kids = null; store.set("kids", null); toast("Kids mode is off"); route();
+    });
+  }
+  if (el.hasAttribute("data-tvtog")) { S.tv = !S.tv; store.set("tv", S.tv); return route(); }
+  if (el.hasAttribute("data-google")) { try { await api.google(); } catch (er) { const p = $("#aerr"); if (p) { p.textContent = er.message; p.hidden = false; } } return; }
+  if (el.hasAttribute("data-verify")) { try { await api.sendVerify(); toast("Verification email sent"); } catch (er) { toast(er.message); } return; }
+  if (el.hasAttribute("data-claim")) { try { await api.claimAdmin(); S.admin = true; toast("You're an admin now"); location.hash = "#admin"; } catch (er) { toast(er.message, 4000); } return; }
+  if (el.hasAttribute("data-demo-reset")) { api.resetDemo?.(); location.reload(); }
+});
+
+document.addEventListener("input", (e) => {
+  if (e.target.id !== "q") return;
+  S.q = e.target.value;
+  clearTimeout(S.qT); S.qT = setTimeout(() => { const pos = e.target.selectionStart; route().then(() => { const q = $("#q"); if (q) q.setSelectionRange(pos, pos); }); }, 220);
+});
+
+document.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = e.target;
+  if (f.id === "authf") {
+    const err = $("#aerr"); err.hidden = true;
+    const show = (m) => { err.textContent = m; err.hidden = false; };
+    const email = $("#ae").value.trim(), pass = $("#ap")?.value || "", name = $("#an")?.value.trim();
+    if (!/^\S+@\S+\.\S+$/.test(email)) return show("Enter a valid email address.");
+    const b = $("button[type=submit]", f); b.disabled = true;
+    try {
+      if (location.hash === "#reset") { await api.resetPassword(email); show("Check your inbox for a reset link."); return; }
+      if (pass.length < 6) return show("Use a password of at least 6 characters.");
+      if (location.hash === "#signup") { if (!name) return show("Enter your name."); await api.signUp(name, email, pass); }
+      else await api.signIn(email, pass);
+    } catch (er) { show(er.message); } finally { b.disabled = false; }
+  }
+  if (f.id === "grf") {
+    const err = $("#gerr"); err.hidden = true;
+    const d = { name: $("#gn").value.trim(), email: $("#ge").value.trim(), title: $("#gt").value.trim(), text: $("#gx").value.trim() };
+    if (!d.name || !/^\S+@\S+\.\S+$/.test(d.email) || d.text.length < 10) { err.textContent = "Add your name, a valid email and a few words about the problem."; err.hidden = false; return; }
+    try { await api.grievance(d); $("#app").innerHTML = `<div class="auth"><span class="eyebrow">Received</span><h1>Thanks, we have your complaint</h1><p>We'll reply to ${esc(d.email)} within 24 hours and resolve it within 15 days.</p><a class="btn ghost" href="#home">Back to Home</a></div>`; }
+    catch (er) { err.textContent = er.message; err.hidden = false; }
+  }
+});
+
+/* ---------- TV remote: arrow keys move between tiles and buttons ---------- */
+document.addEventListener("keydown", (e) => {
+  if (!S.tv || document.body.classList.contains("playing") || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) return;
+  if (e.target.matches?.("input, textarea, select") && ["ArrowLeft", "ArrowRight"].includes(e.key)) return;
+  const all = $$("[data-nav], .sheet-ov button, .sheet-ov input").filter((x) => x.offsetParent !== null);
+  const cur = document.activeElement;
+  if (!all.includes(cur)) { all[0]?.focus(); e.preventDefault(); return; }
+  const a = cur.getBoundingClientRect(), ax = a.left + a.width / 2, ay = a.top + a.height / 2;
+  const horiz = e.key === "ArrowLeft" || e.key === "ArrowRight";
+  let best = null, bd = Infinity;
+  for (const t of all) {
+    if (t === cur) continue;
+    const b = t.getBoundingClientRect(), dx = b.left + b.width / 2 - ax, dy = b.top + b.height / 2 - ay;
+    const ok = e.key === "ArrowRight" ? dx > 8 : e.key === "ArrowLeft" ? dx < -8 : e.key === "ArrowDown" ? dy > 8 : dy < -8;
+    if (!ok) continue;
+    const d = horiz ? Math.abs(dx) + Math.abs(dy) * 3 : Math.abs(dy) + Math.abs(dx) * 0.6;
+    if (d < bd) { bd = d; best = t; }
+  }
+  if (best) { e.preventDefault(); best.focus({ preventScroll: true }); best.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" }); }
+});
+
+/* ---------- start ---------- */
+if ("serviceWorker" in navigator && !DEMO && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
+shell("home");
+await loadCatalogue();
+S.ready = true;
+route();
+api.onAuth(async (u) => {
+  S.user = u;
+  await loadMine();
+  if (u && S.after) { const go = S.after; S.after = null; location.hash = go; }
+  else if (u && /^#(signin|signup|reset)$/.test(location.hash)) location.hash = "#home";
+  route();
+});

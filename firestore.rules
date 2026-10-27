@@ -1,0 +1,53 @@
+rules_version = '2';
+// Lifeofline Movies — paste into Firebase console → Firestore Database → Rules → Publish.
+// The lifeofline-movies-api service on Render uses the Admin SDK, which skips these rules:
+// it alone writes Premium status (subs), dates of birth, payment orders and the video signing key.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function me() { return request.auth.uid; }
+    function isAdmin() { return signedIn() && exists(/databases/$(database)/documents/admins/$(me())); }
+    function str(v, max) { return v is string && v.size() <= max; }
+
+    // Catalogue: anyone can read published titles; only admins write.
+    match /titles/{tid} {
+      allow read: if resource.data.published == true || isAdmin();
+      allow write: if isAdmin();
+      // Episodes hold Cloudflare video ids, which only play with a link signed by the server.
+      match /episodes/{eid} {
+        allow read: if true;
+        allow write: if isAdmin();
+      }
+    }
+
+    // House ads shown to free viewers.
+    match /ads/{aid} {
+      allow read: if resource.data.active == true || isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // The viewer's own profile. "adult" is set by the server from the date of birth, never by the app.
+    match /users/{uid} {
+      allow read: if signedIn() && (me() == uid || isAdmin());
+      allow create: if signedIn() && me() == uid && str(request.resource.data.name, 80) && !request.resource.data.keys().hasAny(['adult']);
+      allow update: if signedIn() && me() == uid && str(request.resource.data.name, 80) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['adult']);
+      match /progress/{tid} { allow read, write: if signedIn() && me() == uid; }
+      match /list/{tid} { allow read, write: if signedIn() && me() == uid; }
+      match /private/{doc} { allow read: if signedIn() && me() == uid; }
+    }
+
+    // Premium status: the owner can read it; only the server writes it.
+    match /subs/{uid} { allow read: if signedIn() && (me() == uid || isAdmin()); }
+
+    match /admins/{uid} { allow read: if signedIn() && me() == uid; }
+
+    // Grievance form (IT Rules 2021). Anyone can send one; admins read and update.
+    match /grievances/{gid} {
+      allow create: if str(request.resource.data.name, 80) && str(request.resource.data.email, 120) && str(request.resource.data.text, 3000)
+        && request.resource.data.status == 'open';
+      allow read, update: if isAdmin();
+    }
+
+    // passOrders, server, adminLog: server only (no access from the app).
+  }
+}
