@@ -10,18 +10,33 @@ const SAMPLE_HLS = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"; // publi
 const LINK_HOURS = 6;
 
 module.exports = function makeStream({ db, env }) {
-  const ACC = env.CF_ACCOUNT_ID || "", TOKEN = env.CF_STREAM_TOKEN || "";
+  const clean = (v) => String(v || "").trim().replace(/^["']|["']$/g, ""); // pasted values often carry spaces or quotes
+  const ACC = clean(env.CF_ACCOUNT_ID), TOKEN = clean(env.CF_STREAM_TOKEN), CODE = clean(env.CF_STREAM_CUSTOMER_CODE).replace(/^customer-/, "").replace(/\.cloudflarestream\.com.*$/, "");
   const LIVE = !!(ACC && TOKEN);
-  const HOST = env.CF_STREAM_CUSTOMER_CODE ? `https://customer-${env.CF_STREAM_CUSTOMER_CODE}.cloudflarestream.com` : "https://videodelivery.net";
+  const HOST = CODE ? `https://customer-${CODE}.cloudflarestream.com` : "https://videodelivery.net";
   const api = `https://api.cloudflare.com/client/v4/accounts/${ACC}/stream`;
   const show = (msg, code = 400) => Object.assign(new Error(msg), { show: true, status: code });
   const b64 = (s) => Buffer.from(String(s)).toString("base64");
   const b64url = (buf) => Buffer.from(buf).toString("base64").replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
 
+  // Turns Cloudflare's answer into a message an admin can act on.
+  function why(status, text) {
+    let msg = ""; try { const j = JSON.parse(text); msg = (j.errors || []).map((e) => e.message).join("; "); } catch { msg = String(text || "").slice(0, 200); }
+    const hint = status === 401 || status === 403 || /auth|token|permission/i.test(msg) ? " Check CF_STREAM_TOKEN on Render: it needs the permission Account → Stream → Edit."
+      : status === 404 || /account/i.test(msg) ? " Check CF_ACCOUNT_ID on Render."
+      : /subscription|plan|quota|storage|limit/i.test(msg) ? " Check that your Cloudflare Stream subscription is active and has storage left."
+      : "";
+    return show(`Cloudflare refused the request (${status}${msg ? ": " + msg : ""}).${hint}`, 400);
+  }
+  async function net(url, opts) {
+    try { return await fetch(url, opts); }
+    catch (e) { console.error("Cloudflare network", e.message, e.cause?.message || ""); throw show("Couldn't reach Cloudflare: " + (e.cause?.message || e.message) + ". Check CF_ACCOUNT_ID and CF_STREAM_TOKEN on Render.", 400); }
+  }
   async function cf(method, path, body, headers = {}) {
-    const res = await fetch(api + path, { method, headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json", ...headers }, body: body ? JSON.stringify(body) : undefined });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || data.success === false) { console.error("Cloudflare", method, path, res.status, JSON.stringify(data.errors || data)); throw show("The video service refused this. Check the Cloudflare settings on Render.", 502); }
+    const res = await net(api + path, { method, headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json", ...headers }, body: body ? JSON.stringify(body) : undefined });
+    const text = await res.text();
+    let data = {}; try { data = JSON.parse(text); } catch { /* not JSON */ }
+    if (!res.ok || data.success === false) { console.error("Cloudflare", method, path, res.status, text.slice(0, 500)); throw why(res.status, text); }
     return data.result;
   }
 
@@ -58,9 +73,11 @@ module.exports = function makeStream({ db, env }) {
     if (size <= 0 || size > 30 * 1024 ** 3) throw show("Pick a video file under 30 GB.");
     if (!LIVE) return { test: true, uid: "test_" + crypto.randomBytes(6).toString("hex") };
     const meta = [`name ${b64(String(name || "video").slice(0, 120))}`, "requiresignedurls", `maxdurationseconds ${b64(6 * 3600)}`].join(",");
-    const res = await fetch(`${api}?direct_user=true`, { method: "POST", headers: { Authorization: `Bearer ${TOKEN}`, "Tus-Resumable": "1.0.0", "Upload-Length": String(size), "Upload-Metadata": meta } });
-    if (res.status !== 201) { console.error("Cloudflare tus", res.status, await res.text().catch(() => "")); throw show("Cloudflare didn't accept the upload. Check the Cloudflare settings on Render.", 502); }
-    return { uploadUrl: res.headers.get("location"), uid: res.headers.get("stream-media-id") };
+    const res = await net(`${api}?direct_user=true`, { method: "POST", headers: { Authorization: `Bearer ${TOKEN}`, "Tus-Resumable": "1.0.0", "Upload-Length": String(size), "Upload-Metadata": meta } });
+    if (res.status !== 201) { const text = await res.text().catch(() => ""); console.error("Cloudflare tus", res.status, text.slice(0, 500)); throw why(res.status, text); }
+    const uploadUrl = res.headers.get("location"), uid = res.headers.get("stream-media-id");
+    if (!uploadUrl || !uid) { console.error("Cloudflare tus: missing headers", [...res.headers.keys()].join(",")); throw show("Cloudflare accepted the upload but didn't return an upload address. Try again.", 400); }
+    return { uploadUrl, uid };
   }
 
   // Admin page: is the video ready to play yet?

@@ -151,7 +151,8 @@ async function admin(uid, body) {
 
 /* ---------- web server ---------- */
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST, GET, OPTIONS", "Access-Control-Allow-Headers": "Content-Type, Authorization", "Access-Control-Max-Age": "86400" };
-function reply(res, code, body) { res.writeHead(code, { ...cors, "Content-Type": "application/json" }); res.end(JSON.stringify(body)); }
+function reply(res, code, body) {
+  if (code >= 502 && code <= 504) code = 500; res.writeHead(code, { ...cors, "Content-Type": "application/json" }); res.end(JSON.stringify(body)); }
 let lastHourly = 0;
 const hourly = () => { if (Date.now() - lastHourly < 36e5) return; lastHourly = Date.now(); billing.hourly(); };
 
@@ -174,7 +175,10 @@ const server = http.createServer(async (req, res) => {
       if (!uid) return reply(res, 401, { error: "Sign in first." });
       if (req.url === "/sub") { const r = await billing.handle(uid, body); return reply(res, r.status, r.body); }
       if (req.url === "/me") return reply(res, 200, { result: await me(uid, body) });
-      if (req.url === "/admin") return reply(res, 200, { result: await admin(uid, body) });
+      if (req.url === "/admin") {
+        try { return reply(res, 200, { result: await admin(uid, body) }); }
+        catch (e) { if (e.show) throw e; console.error("admin", body?.action, e); return reply(res, 400, { error: "Admin action failed: " + (e.message || "unknown error") }); }
+      }
     } catch (e) {
       if (e.show) return reply(res, e.status || 400, { error: e.message, ...(e.extra || {}) });
       if (e instanceof SyntaxError) return reply(res, 400, { error: "bad request" });
