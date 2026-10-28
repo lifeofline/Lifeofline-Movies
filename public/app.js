@@ -46,7 +46,7 @@ async function loadMine() {
 
 /* ---------- shell ---------- */
 const NAV = [["home", "Home"], ["reels", "Reels"], ["movies", "Movies"], ["series", "Series"], ["search", "Search"], ["plans", "Plans"]];
-const TABS = [["home", "Home", "M3 11 12 4l9 7v9h-6v-6H9v6H3z"], ["reels", "Reels", "M8 2h8a3 3 0 0 1 3 3v14a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V5a3 3 0 0 1 3-3zm2 7v6l5-3z"], ["search", "Search", "M10.5 4a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13zm5 11.5L20 20"], ["movies", "Movies", "M3 6h18v13H3zM3 10h18M8 6v4M13 6v4M18 6v4"], ["account", "Account", "M12 4a4 4 0 1 1 0 8 4 4 0 0 1 0-8zM4 21c1-4 4-6 8-6s7 2 8 6"]];
+const TABS = [["home", "Home", "M3 11 12 4l9 7v9h-6v-6H9v6H3z"], ["reels", "Reels", "M8 2h8a3 3 0 0 1 3 3v14a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V5a3 3 0 0 1 3-3zm2 7v6l5-3z"], ["movies", "Movies", "M3 6h18v13H3zM3 10h18M8 6v4M13 6v4M18 6v4"], ["series", "Series", "M3 7h18v12H3zM7 3l5 4 5-4"], ["search", "Search", "M10.5 4a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13zm5 11.5L20 20"], ["account", "Account", "M12 4a4 4 0 1 1 0 8 4 4 0 0 1 0-8zM4 21c1-4 4-6 8-6s7 2 8 6"]];
 
 function shell(route) {
   $("#nav").innerHTML = NAV.map(([k, l]) => `<a href="#${k}" data-nav class="${route === k ? "on" : ""}">${l}</a>`).join("");
@@ -224,21 +224,23 @@ function mountHero() {
   };
   const next = () => { if (!paused && !document.hidden && !document.body.classList.contains("playing")) show(i + 1); };
   show(0);
-  if (slides.length > 1 && !calm()) heroTimer = setInterval(next, HERO_MS);
-  hero.classList.toggle("auto", slides.length > 1 && !calm());
-  hero.addEventListener("mouseenter", () => { paused = true; hero.classList.add("paused"); });
-  hero.addEventListener("mouseleave", () => { paused = false; hero.classList.remove("paused"); });
+  // Rotates on its own like Netflix, also when the mouse rests on it or after a tap on a phone
+  // (phones report a tap as the mouse "entering" and never leaving, which used to stop it for good).
+  // Only keyboard/TV focus on a banner button holds it still, so the button doesn't slide away.
+  const auto = slides.length > 1;
+  if (auto) heroTimer = setInterval(next, HERO_MS);
+  hero.classList.toggle("auto", auto);
   hero.addEventListener("focusin", (e) => { if (e.target.matches?.(":focus-visible")) { paused = true; hero.classList.add("paused"); } });
   hero.addEventListener("focusout", () => { paused = false; hero.classList.remove("paused"); });
   hero.addEventListener("click", (e) => {
     const b = e.target.closest("[data-slide],[data-goslide]"); if (!b) return;
     e.stopPropagation();
     show(b.dataset.slide ? i + Number(b.dataset.slide) : Number(b.dataset.goslide));
-    clearInterval(heroTimer); if (slides.length > 1 && !calm()) heroTimer = setInterval(next, HERO_MS);
+    clearInterval(heroTimer); if (auto) heroTimer = setInterval(next, HERO_MS);
   });
   let x0 = null;
   hero.addEventListener("touchstart", (e) => { x0 = e.touches[0].clientX; }, { passive: true });
-  hero.addEventListener("touchend", (e) => { if (x0 == null) return; const dx = e.changedTouches[0].clientX - x0; x0 = null; if (Math.abs(dx) > 50) { show(i + (dx < 0 ? 1 : -1)); clearInterval(heroTimer); if (!calm()) heroTimer = setInterval(next, HERO_MS); } });
+  hero.addEventListener("touchend", (e) => { if (x0 == null) return; const dx = e.changedTouches[0].clientX - x0; x0 = null; if (Math.abs(dx) > 50) { show(i + (dx < 0 ? 1 : -1)); clearInterval(heroTimer); if (auto) heroTimer = setInterval(next, HERO_MS); } });
 }
 
 function vGrid(kind) {
