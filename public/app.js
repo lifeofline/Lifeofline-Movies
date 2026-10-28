@@ -60,7 +60,7 @@ function tile(t, shape = "tall") {
   const p = S.progress[t.id];
   const tag = isSoon(t) ? `<span class="tag soon">Coming soon</span>` : t.premium ? `<span class="tag prem">Premium</span>` : `<span class="tag">Free</span>`;
   const pct = p?.dur ? Math.min(100, (p.pos / p.dur) * 100) : 0;
-  return `<a class="tile" href="#t/${esc(t.id)}" data-nav aria-label="${esc(t.title)}">
+  return `<a class="tile" href="#t/${esc(t.id)}" data-nav aria-label="${esc(t.title)}"${t.teaser ? ` data-teaser="${esc(t.teaser)}"` : ""}>
     <div class="poster ${shape}" style="${posterStyle(t)}">${tag}${t.format === "v" ? '<span class="tag r">9:16</span>' : ""}${t.poster ? "" : `<div class="pt">${esc(t.title)}</div>`}</div>
     ${p ? `<div class="prog"><i style="width:${pct}%"></i></div>` : ""}
     <div class="cap">${t.poster ? `<b>${esc(t.title)}</b>` : ""}<span>${esc(KINDS[t.kind] || "")} · ${esc(t.lang || "")}</span></div></a>`;
@@ -68,7 +68,17 @@ function tile(t, shape = "tall") {
 function rail(title, items, { shape = "tall", sub = "", more = "" } = {}) {
   if (!items.length) return "";
   return `<section class="rail"><div class="rail-h"><h2>${title}</h2>${more ? `<a href="${more}" data-nav>See all</a>` : `<span>${sub}</span>`}</div>
-    <div class="track ${shape}">${items.map((t) => tile(t, shape)).join("")}</div></section>`;
+    <div class="rowwrap"><button class="rarr l" data-scroll="-1" aria-label="Scroll left" tabindex="-1">‹</button>
+    <div class="track ${shape}">${items.map((t) => tile(t, shape)).join("")}</div>
+    <button class="rarr r" data-scroll="1" aria-label="Scroll right" tabindex="-1">›</button></div></section>`;
+}
+// Ten picks with big rank numbers, like a streaming "Top 10" row (an editorial list, set by the order in Admin).
+function top10(items) {
+  if (items.length < 5) return "";
+  return `<section class="rail"><div class="rail-h"><h2>Top 10 picks on Lifeofline</h2><span>Chosen by our team</span></div>
+    <div class="rowwrap"><button class="rarr l" data-scroll="-1" aria-label="Scroll left" tabindex="-1">‹</button>
+    <div class="track top10">${items.slice(0, 10).map((t, i) => `<div class="rank"><span class="num" aria-hidden="true">${i + 1}</span>${tile(t, "tall")}</div>`).join("")}</div>
+    <button class="rarr r" data-scroll="1" aria-label="Scroll right" tabindex="-1">›</button></div></section>`;
 }
 const chips = () => `<div class="chips" role="group" aria-label="Language">${["All", ...LANGS.filter((l) => S.titles.some((t) => t.lang === l))].map((l) => `<button class="chip ${S.lang === l ? "on" : ""}" data-lang="${esc(l)}" data-nav>${l === "All" ? "All languages" : esc(l)}</button>`).join("")}</div>`;
 const empty = (msg, cta = "") => `<div class="empty"><p>${msg}</p>${cta}</div>`;
@@ -89,24 +99,16 @@ function vHome() {
   const all = visible();
   if (!all.length) return empty(S.ready ? (S.admin ? "No titles published yet. Add the first one in Admin." : "New titles are on the way. Check back soon.") : `<span class="spin"></span>`, S.admin ? `<a class="btn gold" href="#admin">Open Admin</a>` : "");
   const ready = all.filter((t) => !isSoon(t));
-  const pool = [...ready.filter((t) => t.original), ...ready.filter((t) => !t.original), ...all.filter(isSoon)].slice(0, 6);
-  const h = pool[S.heroI % pool.length];
+  // Banner: playable titles with artwork first, then coming-soon films with teasers, then the rest.
+  const art = (t) => !!(t.poster || t.teaser);
+  const pool = [...new Set([...ready.filter(art), ...all.filter((t) => isSoon(t) && art(t)), ...ready])].slice(0, 6);
   const cont = Object.entries(S.progress).sort((a, b) => b[1].at - a[1].at).map(([id]) => byId(id)).filter(Boolean).filter((t) => visible().includes(t));
   const list = S.list.map(byId).filter(Boolean);
   const L = inLang(all);
-  return `<section class="hero">
-      <div class="hart" style="${posterStyle(h, "right center")}">${h.teaser ? teaserVideo(h, "hvid") : ""}</div><div class="hshade"></div>
-      <div class="hcopy">
-        <span class="eyebrow">${h.original ? "Lifeofline Original · " : ""}${esc(KINDS[h.kind] || "")}</span>
-        <h1>${esc(h.title)}</h1>
-        <div class="meta"><span class="rating">${esc(h.rating)}</span><span>${esc(h.genre || "")}</span><span>${esc(h.lang || "")}</span></div>
-        <p>${esc(h.desc || "")}</p>
-        <div class="row">${isSoon(h) ? `<span class="badge soon">Coming soon</span>${h.teaser ? `<button class="btn gold" data-trailer="${esc(h.id)}" data-nav>▶ Teaser</button>` : ""}<button class="btn ghost" data-listtog="${esc(h.id)}" data-nav>${S.list.includes(h.id) ? "✓ In My List" : "＋ My List"}</button>` : `<button class="btn gold" data-play="${esc(h.id)}" data-nav>▶ Play</button>`}<a class="btn ghost" href="#t/${esc(h.id)}" data-nav>Details</a></div>
-      </div>
-      ${pool.length > 1 ? `<div class="dots">${pool.map((_, i) => `<button aria-label="Featured ${i + 1}" class="${i === S.heroI % pool.length ? "on" : ""}" data-hero="${i}"></button>`).join("")}</div>` : ""}
-    </section>
+  return `${heroCarousel(pool)}
     ${chips()}
     ${rail("Continue watching", cont, { shape: "wide" })}
+    ${top10([...ready, ...all.filter(isSoon)])}
     ${rail("New on Lifeofline", L.filter((t) => !isSoon(t)).slice(0, 12), { shape: "wide" })}
     ${rail("Coming soon", L.filter(isSoon), { sub: "Add to My List to find them on release" })}
     ${rail("Reels · short dramas", L.filter((t) => t.kind === "short"), { more: "#reels", sub: "Two-minute episodes" })}
@@ -118,6 +120,69 @@ function vHome() {
     ${rail("Free with ads", L.filter((t) => !t.premium && !isSoon(t)), { sub: "No plan needed" })}
     ${GENRE_RAILS.map(([name, re]) => { const g = L.filter((t) => re.test(t.genre || "")); return g.length >= 3 ? rail(name, g) : ""; }).join("")}
     ${L.length ? "" : empty(`Nothing in ${esc(S.lang)} yet.`)}`;
+}
+
+// Full-width banner that rotates through up to 6 titles, playing each one's teaser, like the big streaming apps.
+function heroCarousel(pool) {
+  const slide = (h, i) => {
+    const soon = isSoon(h);
+    const bg = h.poster ? `background-image:url('${String(h.poster).replace(/'/g, "%27")}')` : posterStyle(h);
+    return `<article class="slide ${i === 0 ? "on" : ""}" data-i="${i}" aria-roledescription="slide" aria-label="${i + 1} of ${pool.length}: ${esc(h.title)}" ${i ? 'aria-hidden="true"' : ""}>
+      <div class="sbg" style="${bg}"></div>
+      <div class="sart" style="${posterStyle(h)}">${h.teaser && !calm() ? `<video src="${esc(h.teaser)}" poster="${esc(h.poster || "")}" muted loop playsinline preload="${i === 0 ? "auto" : "none"}" aria-hidden="true"></video>` : ""}</div>
+      <div class="hshade"></div>
+      <div class="hcopy">
+        <span class="eyebrow">${h.original ? "Lifeofline Original · " : ""}${esc(KINDS[h.kind] || "")}${soon ? " · Coming soon" : ""}</span>
+        <h1>${esc(h.title)}</h1>
+        <div class="meta"><span class="rating">${esc(h.rating || "U")}</span><span>${esc(h.genre || "")}</span><span>${esc(h.lang || "")}</span></div>
+        <p>${esc(h.desc || "")}</p>
+        <div class="row">
+          ${soon ? (h.teaser || h.trailerUid ? `<button class="btn gold" data-trailer="${esc(h.id)}" data-nav>▶ Teaser</button>` : "") : `<button class="btn gold" data-play="${esc(h.id)}" data-nav>▶ Play</button>`}
+          <button class="btn ghost" data-listtog="${esc(h.id)}" data-nav>${S.list.includes(h.id) ? "✓ My List" : "＋ My List"}</button>
+          <a class="btn ghost" href="#t/${esc(h.id)}" data-nav>ⓘ More info</a>
+        </div>
+      </div>
+    </article>`;
+  };
+  return `<section class="hero" id="hero" aria-roledescription="carousel" aria-label="Featured on Lifeofline">
+    ${pool.map(slide).join("")}
+    ${pool.length > 1 ? `<button class="harrow prev" data-slide="-1" aria-label="Previous">‹</button><button class="harrow next" data-slide="1" aria-label="Next">›</button>
+    <div class="dots">${pool.map((t, i) => `<button class="${i === 0 ? "on" : ""}" data-goslide="${i}" aria-label="Show ${esc(t.title)}"><i></i></button>`).join("")}</div>` : ""}
+  </section>`;
+}
+
+let heroTimer = 0;
+const HERO_MS = 8000;
+function mountHero() {
+  clearInterval(heroTimer);
+  const hero = $("#hero"); if (!hero) return;
+  const slides = $$(".slide", hero), dots = $$(".dots button", hero);
+  let i = 0, paused = false;
+  const show = (n) => {
+    i = (n + slides.length) % slides.length;
+    slides.forEach((sl, k) => {
+      const on = k === i; sl.classList.toggle("on", on); sl.toggleAttribute("aria-hidden", !on);
+      const v = $("video", sl); if (v) { if (on) { v.preload = "auto"; v.currentTime = 0; v.play().catch(() => {}); } else v.pause(); }
+    });
+    dots.forEach((d, k) => { d.classList.toggle("on", k === i); d.classList.remove("run"); if (k === i) { void d.offsetWidth; d.classList.add("run"); } });
+  };
+  const next = () => { if (!paused && !document.hidden && !document.body.classList.contains("playing")) show(i + 1); };
+  show(0);
+  if (slides.length > 1 && !calm()) heroTimer = setInterval(next, HERO_MS);
+  hero.classList.toggle("auto", slides.length > 1 && !calm());
+  hero.addEventListener("mouseenter", () => { paused = true; hero.classList.add("paused"); });
+  hero.addEventListener("mouseleave", () => { paused = false; hero.classList.remove("paused"); });
+  hero.addEventListener("focusin", (e) => { if (e.target.matches?.(":focus-visible")) { paused = true; hero.classList.add("paused"); } });
+  hero.addEventListener("focusout", () => { paused = false; hero.classList.remove("paused"); });
+  hero.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-slide],[data-goslide]"); if (!b) return;
+    e.stopPropagation();
+    show(b.dataset.slide ? i + Number(b.dataset.slide) : Number(b.dataset.goslide));
+    clearInterval(heroTimer); if (slides.length > 1 && !calm()) heroTimer = setInterval(next, HERO_MS);
+  });
+  let x0 = null;
+  hero.addEventListener("touchstart", (e) => { x0 = e.touches[0].clientX; }, { passive: true });
+  hero.addEventListener("touchend", (e) => { if (x0 == null) return; const dx = e.changedTouches[0].clientX - x0; x0 = null; if (Math.abs(dx) > 50) { show(i + (dx < 0 ? 1 : -1)); clearInterval(heroTimer); if (!calm()) heroTimer = setInterval(next, HERO_MS); } });
 }
 
 function vGrid(kind) {
@@ -163,7 +228,12 @@ async function vTitle(id) {
   const note = soon ? "Not out yet. Add it to My List and you'll find it there on release." : !S.premium && t.premium ? (t.kind === "short" ? `Episodes 1–${t.freeEps ?? 3} are free with ads. The rest are in the ₹${PRICE} plan.`
     : t.kind === "series" ? `Episode 1 is free with ads. The rest are in the ₹${PRICE} plan.` : `This movie is in the ₹${PRICE} plan.${t.trailerUid ? " The trailer is free." : t.teaser ? " The teaser is free." : ""}`) : "";
   const runtime = t.kind === "movie" ? dur(eps[0]?.duration) : `${eps.length} episode${eps.length === 1 ? "" : "s"}`;
-  return `<div class="detail ${t.format === "v" ? "v" : ""}">
+  const words = (x) => new Set(String(x.genre || "").toLowerCase().split(/[^a-z-]+/).filter((w) => w.length > 2));
+  const mine = words(t);
+  const like = visible().filter((x) => x.id !== t.id).map((x) => [x, [...words(x)].filter((w) => mine.has(w)).length + (x.lang === t.lang ? 0.5 : 0)])
+    .filter(([, n]) => n >= 1).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([x]) => x);
+  return `<div class="dback" style="${t.poster ? `background-image:url('${String(t.poster).replace(/'/g, "%27")}')` : posterStyle(t)}" aria-hidden="true"></div>
+  <div class="detail ${t.format === "v" ? "v" : ""}">
     <div class="dposter" style="${posterStyle(t)}">${t.teaser ? teaserVideo(t) : t.poster ? "" : `<div class="pt">${esc(t.title)}</div>`}</div>
     <div class="dbody">
       <span class="eyebrow">${t.original ? "Lifeofline Original · " : ""}${esc(KINDS[t.kind] || "")}${t.format === "v" ? " · vertical" : ""}</span>
@@ -188,7 +258,8 @@ async function vTitle(id) {
           <span class="info"><b>${esc(e.name || "Episode " + e.n)}</b><span>${esc(dur(e.duration))}${ep ? " · watching" : ""}</span></span>
           ${locked(e) ? `<span class="lock">₹${PRICE} plan</span>` : !S.premium ? `<span class="free">Free · ads</span>` : ""}</button>`;
       }).join("")}</div>` : ""}
-    </div></div>`;
+    </div></div>
+    ${like.length ? `<section class="rail"><div class="rail-h"><h2>More like this</h2></div><div class="grid">${like.map((x) => tile(x, "tall")).join("")}</div></section>` : ""}`;
 }
 
 function vPlans() {
@@ -281,14 +352,54 @@ async function route() {
     else { const m = await import("./admin.js"); if (seq !== renderSeq) return; html = `<div id="adm"></div>`; setTimeout(() => m.mountAdmin($("#adm"), { api, S, reload: async () => { await loadCatalogue(); } }), 0); }
   } else { html = vHome(); tab = "home"; }
   if (seq !== renderSeq) return;
+  clearInterval(heroTimer);
   $("#app").innerHTML = html;
   shell(tab === "signin" ? "account" : tab);
-  if (r !== "t" && !S.keepScroll) window.scrollTo(0, 0);
+  // Space above the page (header + demo bar): the banner and title backdrop slide up under it.
+  document.documentElement.style.setProperty("--toph", ($(".top").offsetHeight + ($("#demo").hidden ? 0 : $("#demo").offsetHeight)) + "px");
+  document.body.classList.toggle("home", tab === "home" && !!$("#hero"));
+  document.body.classList.toggle("titlepg", r === "t");
+  onScroll();
+  if ($("#hero")) mountHero();
+  clearTimeout(peekT);
+  if (!S.keepScroll) window.scrollTo(0, 0);
   S.keepScroll = false;
   if (S.tv) setTimeout(() => { const f = $("#app [data-nav]"); if (f && !document.activeElement?.closest("#app")) f.focus({ preventScroll: true }); }, 30);
   if (r === "search") { const q = $("#q"); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
 }
 window.addEventListener("hashchange", () => { if (history.state?.player) return; route(); });
+
+// Header is see-through over the banner and turns solid once the page scrolls.
+function onScroll() { document.querySelector(".top")?.classList.toggle("solid", window.scrollY > 40); }
+window.addEventListener("scroll", onScroll, { passive: true });
+
+// Row arrows (computer): scroll a row by almost a screen.
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-scroll]"); if (!b) return;
+  const tr = b.parentElement.querySelector(".track"); tr.scrollBy({ left: Number(b.dataset.scroll) * tr.clientWidth * 0.85, behavior: calm() ? "auto" : "smooth" });
+});
+
+// Hover preview (computer) and focus preview (TV): the tile grows a little and plays its teaser.
+const canHover = matchMedia("(hover: hover) and (pointer: fine)");
+let peekT = 0;
+function peek(tileEl) {
+  clearTimeout(peekT);
+  if (!tileEl?.dataset.teaser || calm()) return;
+  peekT = setTimeout(() => {
+    if (tileEl.classList.contains("peek")) return;
+    $$(".tile.peek").forEach(unpeek);
+    const box = $(".poster", tileEl); if (!box) return;
+    const v = document.createElement("video");
+    Object.assign(v, { src: tileEl.dataset.teaser, muted: true, loop: true, playsInline: true, autoplay: true });
+    v.className = "tvid"; v.setAttribute("aria-hidden", "true");
+    box.append(v); v.play().catch(() => {});
+    tileEl.classList.add("peek");
+  }, 450);
+}
+function unpeek(tileEl) { clearTimeout(peekT); if (!tileEl) return; tileEl.classList.remove("peek"); $$("video.tvid", tileEl).forEach((v) => v.remove()); }
+document.addEventListener("mouseover", (e) => { if (!canHover.matches) return; const t = e.target.closest(".tile"); if (t) peek(t); });
+document.addEventListener("mouseout", (e) => { const t = e.target.closest(".tile"); if (t && !t.contains(e.relatedTarget)) unpeek(t); });
+document.addEventListener("focusin", (e) => { if (!S.tv) return; const t = e.target.closest?.(".tile"); $$(".tile.peek").forEach((x) => x !== t && unpeek(x)); if (t) peek(t); });
 
 /* ---------- actions ---------- */
 async function play(titleId, epId, trailer = false) {
@@ -354,9 +465,11 @@ document.addEventListener("click", async (e) => {
   if (el.dataset.play) return play(el.dataset.play, el.dataset.ep);
   if (el.dataset.trailer) return play(el.dataset.trailer, null, true);
   if (el.dataset.lang) { S.lang = el.dataset.lang; store.set("lang", S.lang); S.keepScroll = true; return route(); }
-  if (el.dataset.hero) { S.heroI = Number(el.dataset.hero); S.keepScroll = true; return route(); }
   if (el.dataset.listtog) {
-    try { const on = await api.toggleList(el.dataset.listtog); S.list = on ? [el.dataset.listtog, ...S.list] : S.list.filter((x) => x !== el.dataset.listtog); toast(on ? "Added to My List" : "Removed from My List"); S.keepScroll = true; route(); }
+    try { const on = await api.toggleList(el.dataset.listtog); S.list = on ? [el.dataset.listtog, ...S.list] : S.list.filter((x) => x !== el.dataset.listtog); toast(on ? "Added to My List" : "Removed from My List");
+      // Update the buttons in place so the banner doesn't jump back to its first slide.
+      $$(`[data-listtog="${CSS.escape(el.dataset.listtog)}"]`).forEach((b) => { b.textContent = b.textContent.replace(/^(✓|＋) (In )?My List$/, (m, _s, inn) => `${on ? "✓" : "＋"} ${inn || ""}My List`); });
+      if (!location.hash.startsWith("#home") && location.hash !== "" && !location.hash.startsWith("#t/")) { S.keepScroll = true; route(); } }
     catch (er) { if (er.needSignIn) { S.after = location.hash; location.hash = "#signin"; } toast(er.message); }
     return;
   }
