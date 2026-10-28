@@ -4,7 +4,7 @@
   const store = new Map();
   const doc = (p) => ({ get: async () => ({ exists: store.has(p), data: () => store.get(p) }), set: async (v, o) => store.set(p, o?.merge ? { ...(store.get(p) || {}), ...v } : v), update: async (v) => store.set(p, { ...store.get(p), ...v }) });
   const db = { doc, runTransaction: async (fn) => fn({ get: (r) => r.get(), set: (r, v, o) => r.set(v, o), update: (r, v) => r.update(v) }) };
-  const FV = { delete: () => undefined };
+  const FV = { delete: () => undefined, increment: (n) => n };
   global.fetch = async (u) => new Response(JSON.stringify(u.includes("/plans") ? { id: "plan_1" } : u.includes("/subscriptions") ? { id: "sub_9" } : { id: "order_1" }), { status: 200 });
   for (const subs of ["off", "on"]) {
     const B = require("./billing.js")({ db, FieldValue: FV, env: { RAZORPAY_KEY_ID: "rzp_live_k", RAZORPAY_KEY_SECRET: "sec", RAZORPAY_SUBSCRIPTIONS: subs }, sendEmail: async () => {}, link: (x) => x });

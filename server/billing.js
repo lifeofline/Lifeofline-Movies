@@ -73,6 +73,10 @@ module.exports = function makeBilling({ db, FieldValue, env, sendEmail, link }) 
       tx.set(r, { status: "active", mode, until: end, rzpSubId: rzpSubId || s.rzpSubId || "", lastPaymentId: paymentId || "", startedAt: s.startedAt || now(), updatedAt: now(), reminded: FieldValue.delete() }, { merge: true });
       return { fresh, until: end };
     });
+    if (res.fresh && mode !== "gift" && mode !== "test") {
+      const day = new Date(Date.now() + 5.5 * 36e5).toISOString().slice(0, 10);
+      try { await db.doc(`stats/day-${day}`).set({ day, newPremium: FieldValue.increment(1) }, { merge: true }); } catch (e) { console.error("stats", e.message); }
+    }
     if (res.fresh) await sendEmail(uid, "Welcome to Lifeofline Movies Premium", [
       `Every movie, series and short drama is now unlocked, with no ads.`,
       mode === "subscription" ? `Your ₹${PRICE} plan renews every month. You'll get a notice before each charge, and you can cancel anytime in Account.` : `Your Premium pass is active till ${day(res.until)}.`,

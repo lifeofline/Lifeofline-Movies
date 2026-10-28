@@ -59,6 +59,7 @@ export function createFirebaseApi(config, appConfig = {}) {
       await updateProfile(user, { displayName: name });
       await setDoc(doc(db, "users", user.uid), { name, createdAt: serverTimestamp() }, { merge: true });
       sendEmailVerification(user).catch(() => {});
+      api.track("signup");
       return user;
     }),
     signIn: wrap((email, pass) => signInWithEmailAndPassword(auth, email, pass)),
@@ -68,7 +69,7 @@ export function createFirebaseApi(config, appConfig = {}) {
       try { r = await signInWithPopup(auth, p); }
       catch (e) { if (e.code === "auth/popup-blocked" || e.code === "auth/operation-not-supported-in-this-environment") return signInWithRedirect(auth, p); throw e; }
       const ref = doc(db, "users", r.user.uid);
-      if (!(await getDoc(ref)).exists()) await setDoc(ref, { name: r.user.displayName || "Viewer", createdAt: serverTimestamp() });
+      if (!(await getDoc(ref)).exists()) { await setDoc(ref, { name: r.user.displayName || "Viewer", createdAt: serverTimestamp() }); api.track("signup"); }
       return r.user;
     }),
     resetPassword: wrap((email) => sendPasswordResetEmail(auth, email)),
@@ -90,6 +91,14 @@ export function createFirebaseApi(config, appConfig = {}) {
     async ads() { const s = await getDocs(query(collection(db, "ads"), where("active", "==", true))); return s.docs.map(norm); },
     async profile() { if (!uid()) return null; const s = await getDoc(doc(db, "users", uid())); return s.exists() ? norm(s) : null; },
 
+    // Viewing numbers for Admin → Numbers (best effort, never blocks playback).
+    track(type, data = {}) {
+      if (!base) return;
+      const body = JSON.stringify({ type, ...data });
+      try { if (navigator.sendBeacon && navigator.sendBeacon(base + "/event", new Blob([body], { type: "text/plain" }))) return; } catch { /* fall back */ }
+      fetch(base + "/event", { method: "POST", headers: { "Content-Type": "text/plain" }, body, keepalive: true }).catch(() => {});
+    },
+    reportProblem: (d) => call("/event", { type: "report", ...d }, { needAuth: false }),
     play: (titleId, epId, trailer) => call("/play", { titleId, epId: epId || undefined, trailer: !!trailer }, { needAuth: false }),
     subStatus: () => call("/sub", { action: "status" }),
     subStart: () => call("/sub", { action: "start" }),
@@ -158,13 +167,13 @@ export function createFirebaseApi(config, appConfig = {}) {
       return r.uid;
     },
     videoStatus: (uidV) => call("/admin", { action: "video", uid: uidV }),
-    async uploadImage(file) {
+    async uploadImage(file, { wide = false } = {}) {
       const fd = new FormData();
       fd.append("file", file); fd.append("upload_preset", appConfig.cloudinaryUploadPreset); fd.append("folder", appConfig.cloudinaryFolder || "lifeofline-movies");
       const res = await fetch(`https://api.cloudinary.com/v1_1/${appConfig.cloudinaryCloudName}/image/upload`, { method: "POST", body: fd });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.secure_url) throw new Error("The image didn't upload. Try a JPG or PNG under 10 MB.");
-      return j.secure_url.replace("/upload/", "/upload/f_auto,q_auto,w_900/");
+      return j.secure_url.replace("/upload/", `/upload/f_auto,q_auto,w_${wide ? 1920 : 900}/`);
     },
     async allAds() { const s = await getDocs(collection(db, "ads")); return s.docs.map(norm); },
     saveAd: wrap(async (a) => { const id = a.id || "ad" + Date.now().toString(36); const { id: _d, ...data } = a; await setDoc(doc(db, "ads", id), data, { merge: true }); return id; }),

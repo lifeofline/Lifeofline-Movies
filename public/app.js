@@ -56,14 +56,43 @@ function shell(route) {
 }
 
 /* ---------- pieces ---------- */
+// Available now = has a video and isn't marked Coming soon. Concept = a fictional film shown only as artwork.
+const avail = (t) => !isSoon(t);
+const isConcept = (t) => !!t?.concept;
+const relDate = (t) => (t.releaseDate && !isNaN(Date.parse(t.releaseDate)) ? new Date(t.releaseDate + "T00:00:00+05:30").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "");
+// How many episodes a free viewer can watch, from the title's own data.
+function freeCount(t) {
+  const n = Number(t.episodeCount) || 0;
+  if (!t.premium) return n;
+  if (t.kind === "short") return Math.min(n, t.freeEps ?? 3);
+  if (t.kind === "series") return Math.min(n, t.freeEps ?? 1);
+  return Math.min(n, t.freeEps ?? 0);
+}
+const freeNow = (t) => avail(t) && freeCount(t) > 0;
+function eyebrow(t) {
+  if (isConcept(t)) return "Concept showcase · Fictional film";
+  const parts = [t.original ? "Lifeofline Original" : "", KINDS[t.kind] || ""];
+  if (isSoon(t)) parts.push(relDate(t) ? `Releasing ${relDate(t)}` : "Coming soon");
+  return parts.filter(Boolean).join(" · ");
+}
+// The one accurate main action for this viewer.
+function mainAction(t) {
+  if (isConcept(t) || isSoon(t)) return t.teaser || t.trailerUid ? `<button class="btn gold" data-trailer="${esc(t.id)}" data-nav>▶ ${t.trailerUid ? "Watch trailer" : "Watch poster teaser"}</button>` : "";
+  if (S.premium) return `<button class="btn gold" data-play="${esc(t.id)}" data-nav>▶ Play</button>`;
+  if (!t.premium) return `<button class="btn gold" data-play="${esc(t.id)}" data-nav>▶ Watch free</button>`;
+  if (freeCount(t) > 0) return `<button class="btn gold" data-play="${esc(t.id)}" data-nav>▶ Watch episode 1 free</button>`;
+  return `<a class="btn gold" href="#plans" data-nav>Subscribe to watch · ₹${PRICE}</a>`;
+}
 function tile(t, shape = "tall") {
   const p = S.progress[t.id];
-  const tag = isSoon(t) ? `<span class="tag soon">Coming soon</span>` : t.premium ? `<span class="tag prem">Premium</span>` : `<span class="tag">Free</span>`;
+  const tag = isConcept(t) ? `<span class="tag concept">Concept</span>`
+    : isSoon(t) ? `<span class="tag soon">${relDate(t) ? esc(relDate(t)) : "Coming soon"}</span>`
+    : !t.premium ? `<span class="tag">Free</span>` : freeCount(t) > 0 && !S.premium ? `<span class="tag">Ep 1 free</span>` : `<span class="tag prem">Premium</span>`;
   const pct = p?.dur ? Math.min(100, (p.pos / p.dur) * 100) : 0;
   return `<a class="tile" href="#t/${esc(t.id)}" data-nav aria-label="${esc(t.title)}"${t.teaser ? ` data-teaser="${esc(t.teaser)}"` : ""}>
     <div class="poster ${shape}" style="${posterStyle(t)}">${tag}${t.format === "v" ? '<span class="tag r">9:16</span>' : ""}${t.poster ? "" : `<div class="pt">${esc(t.title)}</div>`}</div>
     ${p ? `<div class="prog"><i style="width:${pct}%"></i></div>` : ""}
-    <div class="cap">${t.poster ? `<b>${esc(t.title)}</b>` : ""}<span>${esc(KINDS[t.kind] || "")} · ${esc(t.lang || "")}</span></div></a>`;
+    <div class="cap">${t.poster ? `<b>${esc(t.title)}</b>` : ""}<span>${isConcept(t) ? "Concept" : esc(KINDS[t.kind] || "")} · ${esc(t.lang || "")}</span></div></a>`;
 }
 function rail(title, items, { shape = "tall", sub = "", more = "" } = {}) {
   if (!items.length) return "";
@@ -98,46 +127,62 @@ const GENRE_RAILS = [
 function vHome() {
   const all = visible();
   if (!all.length) return empty(S.ready ? (S.admin ? "No titles published yet. Add the first one in Admin." : "New titles are on the way. Check back soon.") : `<span class="spin"></span>`, S.admin ? `<a class="btn gold" href="#admin">Open Admin</a>` : "");
-  const ready = all.filter((t) => !isSoon(t));
-  // Banner: playable titles with artwork first, then coming-soon films with teasers, then the rest.
-  const art = (t) => !!(t.poster || t.teaser);
-  const pool = [...new Set([...ready.filter(art), ...all.filter((t) => isSoon(t) && art(t)), ...ready])].slice(0, 6);
-  const cont = Object.entries(S.progress).sort((a, b) => b[1].at - a[1].at).map(([id]) => byId(id)).filter(Boolean).filter((t) => visible().includes(t));
+  const ready = all.filter(avail);
+  const R = inLang(ready);
+  const upcoming = inLang(all.filter((t) => isSoon(t) && !isConcept(t)));
+  const concepts = inLang(all.filter(isConcept));
+  // Banner: only titles people can watch now. With nothing playable yet, the concept films, clearly labelled.
+  const art = (t) => !!(t.banner || t.poster || t.teaser);
+  let pool = [...new Set([...ready.filter(art), ...ready])].slice(0, 5);
+  if (!pool.length) pool = [...all.filter((t) => isSoon(t) && !isConcept(t) && art(t)), ...all.filter((t) => isConcept(t) && art(t))].slice(0, 6);
+  const cont = Object.entries(S.progress).sort((a, b) => b[1].at - a[1].at).map(([id]) => byId(id)).filter(Boolean).filter((t) => visible().includes(t) && avail(t));
   const list = S.list.map(byId).filter(Boolean);
-  const L = inLang(all);
-  return `${heroCarousel(pool)}
+  const newest = [...R].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0) || (a.order ?? 999) - (b.order ?? 999));
+  const many = R.length >= 8; // collections only once there's enough to fill them without repeating
+  const row = (name, list2, opts) => (list2.length >= 3 ? rail(name, list2, opts) : "");
+  return `${pool.length ? heroCarousel(pool) : ""}
     ${chips()}
+    ${S.premium ? "" : rail("Watch free now", R.filter(freeNow), { sub: "No plan needed · short ad breaks" })}
     ${rail("Continue watching", cont, { shape: "wide" })}
-    ${top10([...ready, ...all.filter(isSoon)])}
-    ${rail("New on Lifeofline", L.filter((t) => !isSoon(t)).slice(0, 12), { shape: "wide" })}
-    ${rail("Coming soon", L.filter(isSoon), { sub: "Add to My List to find them on release" })}
-    ${rail("Reels · short dramas", L.filter((t) => t.kind === "short"), { more: "#reels", sub: "Two-minute episodes" })}
-    ${S.premium || S.kids?.on ? "" : `<div class="strip"><div class="price">₹${PRICE}<small> / month</small></div><p>Every title, no ads, Full HD, on your phone, computer and TV. Cancel anytime.</p><a class="btn gold" href="#plans" data-nav>See the plan</a></div>`}
+    ${rail("New on Lifeofline", newest.slice(0, 12), { shape: "wide" })}
+    ${top10(ready)}
+    ${rail("Reels · short dramas", R.filter((t) => t.kind === "short"), { more: "#reels", sub: "Two-minute episodes" })}
+    ${many ? row("Lifeofline Originals", R.filter((t) => t.original && t.kind !== "short"), { shape: "wide" }) : ""}
+    ${many ? row("Movies", R.filter((t) => t.kind === "movie"), { shape: "wide", more: "#movies" }) : ""}
+    ${many ? row("Web series", R.filter((t) => t.kind === "series"), { shape: "wide", more: "#series" }) : ""}
+    ${many ? GENRE_RAILS.map(([name, re]) => row(name, R.filter((t) => re.test(t.genre || "")))).join("") : ""}
+    ${many ? LANGS.map((l) => row(`In ${l}`, ready.filter((t) => t.lang === l))).join("") : ""}
     ${rail("My List", list, { shape: "tall" })}
-    ${rail("Lifeofline Originals", L.filter((t) => t.original && t.kind !== "short"), { shape: "wide" })}
-    ${rail("Movies", L.filter((t) => t.kind === "movie"), { shape: "wide", more: "#movies" })}
-    ${rail("Web series", L.filter((t) => t.kind === "series"), { shape: "wide", more: "#series" })}
-    ${rail("Free with ads", L.filter((t) => !t.premium && !isSoon(t)), { sub: "No plan needed" })}
-    ${GENRE_RAILS.map(([name, re]) => { const g = L.filter((t) => re.test(t.genre || "")); return g.length >= 3 ? rail(name, g) : ""; }).join("")}
-    ${L.length ? "" : empty(`Nothing in ${esc(S.lang)} yet.`)}`;
+    ${R.length ? "" : `<div class="note-strip"><b>New films and series are being added.</b> Until then, watch the teasers in our concept showcase below.</div>`}
+    ${rail("Coming soon", upcoming, { sub: "Release dates where confirmed" })}
+    ${rail("Concept showcase", concepts, { sub: "Fictional films in development · animated poster teasers, not film footage" })}
+    ${S.premium || S.kids?.on ? "" : planStrip(ready)}`;
 }
-
+// The ₹99 plan, explained with what is actually available today.
+function planStrip(ready) {
+  const n = ready.length;
+  return `<section class="planbox"><div class="pb-main"><div class="price">₹${PRICE}<small> / month</small></div>
+      <p>${n ? `${n} title${n === 1 ? "" : "s"} available today. Premium unlocks all of them with no ads, in Full HD, on your phone, computer and TV.` : "Premium unlocks every film and series as it's released, with no ads."} Prices include GST. Cancel anytime.</p>
+      <a class="btn gold" href="#plans" data-nav>See plan and FAQ</a></div>
+    ${faqHtml(ready, 3)}</section>`;
+}
 // Full-width banner that rotates through up to 6 titles, playing each one's teaser, like the big streaming apps.
 function heroCarousel(pool) {
   const slide = (h, i) => {
-    const soon = isSoon(h);
-    const bg = h.poster ? `background-image:url('${String(h.poster).replace(/'/g, "%27")}')` : posterStyle(h);
+    const wide = !!h.banner; // a purpose-made 16:9 banner fills the whole slide
+    const img = h.banner || h.poster;
+    const bg = img ? `background-image:url('${String(img).replace(/'/g, "%27")}')` : posterStyle(h);
     return `<article class="slide ${i === 0 ? "on" : ""}" data-i="${i}" aria-roledescription="slide" aria-label="${i + 1} of ${pool.length}: ${esc(h.title)}" ${i ? 'aria-hidden="true"' : ""}>
-      <div class="sbg" style="${bg}"></div>
-      <div class="sart" style="${posterStyle(h)}">${h.teaser && !calm() ? `<video src="${esc(h.teaser)}" poster="${esc(h.poster || "")}" muted loop playsinline preload="${i === 0 ? "auto" : "none"}" aria-hidden="true"></video>` : ""}</div>
+      <div class="sbg ${wide ? "wide" : ""}" style="${bg}"></div>
+      ${wide ? "" : `<div class="sart" style="${posterStyle(h)}">${h.teaser && !calm() ? `<video src="${esc(h.teaser)}" poster="${esc(h.poster || "")}" muted loop playsinline preload="${i === 0 ? "auto" : "none"}" aria-hidden="true"></video>` : ""}${isConcept(h) && h.teaser ? `<span class="artlbl">Animated poster teaser</span>` : ""}</div>`}
       <div class="hshade"></div>
       <div class="hcopy">
-        <span class="eyebrow">${h.original ? "Lifeofline Original · " : ""}${esc(KINDS[h.kind] || "")}${soon ? " · Coming soon" : ""}</span>
+        <span class="eyebrow">${esc(eyebrow(h))}</span>
         <h1>${esc(h.title)}</h1>
         <div class="meta"><span class="rating">${esc(h.rating || "U")}</span><span>${esc(h.genre || "")}</span><span>${esc(h.lang || "")}</span></div>
-        <p>${esc(h.desc || "")}</p>
+        <p>${esc(h.synopsis || h.desc || "")}</p>
         <div class="row">
-          ${soon ? (h.teaser || h.trailerUid ? `<button class="btn gold" data-trailer="${esc(h.id)}" data-nav>▶ Teaser</button>` : "") : `<button class="btn gold" data-play="${esc(h.id)}" data-nav>▶ Play</button>`}
+          ${mainAction(h)}
           <button class="btn ghost" data-listtog="${esc(h.id)}" data-nav>${S.list.includes(h.id) ? "✓ My List" : "＋ My List"}</button>
           <a class="btn ghost" href="#t/${esc(h.id)}" data-nav>ⓘ More info</a>
         </div>
@@ -186,9 +231,15 @@ function mountHero() {
 }
 
 function vGrid(kind) {
-  const items = inLang(visible().filter((t) => (kind === "movies" ? t.kind === "movie" : t.kind !== "movie")));
-  return `<div class="ptitle"><h1>${kind === "movies" ? "Movies" : "Series and short dramas"}</h1><span>${items.length} titles</span></div>${chips()}
-    <div class="grid">${items.map((t) => tile(t, "tall")).join("")}</div>${items.length ? "" : empty("Nothing here yet.")}`;
+  const base = inLang(visible().filter((t) => (kind === "movies" ? t.kind === "movie" : t.kind !== "movie")));
+  const f = S.avail || "all";
+  const items = base.filter((t) => f === "now" ? avail(t) : f === "soon" ? !avail(t) : true).sort((a, b) => avail(b) - avail(a));
+  const nNow = base.filter(avail).length, nSoon = base.length - nNow;
+  const label = { all: "All", now: `Available now (${nNow})`, soon: `Coming soon and concepts (${nSoon})` };
+  return `<div class="ptitle"><h1>${kind === "movies" ? "Movies" : "Series and short dramas"}</h1><span>${items.length} title${items.length === 1 ? "" : "s"}</span></div>
+    <div class="chips" role="group" aria-label="Availability">${["all", "now", "soon"].map((k) => `<button class="chip ${f === k ? "on" : ""}" data-avail="${k}" data-nav>${label[k]}</button>`).join("")}</div>
+    ${chips()}
+    <div class="grid">${items.map((t) => tile(t, "tall")).join("")}</div>${items.length ? "" : empty(f === "now" ? "Nothing available here yet." : "Nothing here yet.")}`;
 }
 
 function vReels() {
@@ -198,7 +249,7 @@ function vReels() {
     const p = S.progress[t.id];
     return `<section class="reel"><div class="rframe" style="${posterStyle(t)}">
       <div class="rover"><span class="eyebrow">${esc(t.genre || "")} · ${t.episodeCount || "?"} episodes</span><h3>${esc(t.title)}</h3><p>${esc(t.desc || "")}</p>
-        <div class="row"><button class="btn gold" data-play="${esc(t.id)}" data-nav>▶ ${p ? `Continue ep ${p.n}` : "Watch ep 1"}</button>${!S.premium && t.premium ? `<span class="free">Ep 1–${t.freeEps ?? 3} free</span>` : ""}</div></div>
+        <div class="row"><button class="btn gold" data-play="${esc(t.id)}" data-nav>▶ ${p ? `Continue ep ${p.n}` : "Watch ep 1"}</button>${!S.premium && t.premium && freeCount(t) > 0 ? `<span class="free">${freeCount(t) === 1 ? "Ep 1" : `Ep 1–${freeCount(t)}`} free</span>` : ""}</div></div>
       <div class="rside"><button data-listtog="${esc(t.id)}" aria-label="My List" data-nav>${S.list.includes(t.id) ? "✓" : "＋"}</button><span>My List</span>
         <a href="#t/${esc(t.id)}" aria-label="All episodes" data-nav>≡</a><span>Episodes</span>
         <button data-share="${esc(t.id)}" aria-label="Share" data-nav>↗</button><span>Share</span></div>
@@ -224,57 +275,105 @@ async function vTitle(id) {
   const p = S.progress[id];
   const first = p ? eps.find((e) => e.id === p.epId) || eps[0] : eps[0];
   const locked = (e) => !S.premium && !freeEpisode(t, e);
-  const soon = isSoon(t) && !(S.admin && first); // admins can still test a coming-soon title once a video is uploaded
-  const note = soon ? "Not out yet. Add it to My List and you'll find it there on release." : !S.premium && t.premium ? (t.kind === "short" ? `Episodes 1–${t.freeEps ?? 3} are free with ads. The rest are in the ₹${PRICE} plan.`
-    : t.kind === "series" ? `Episode 1 is free with ads. The rest are in the ₹${PRICE} plan.` : `This movie is in the ₹${PRICE} plan.${t.trailerUid ? " The trailer is free." : t.teaser ? " The teaser is free." : ""}`) : "";
-  const runtime = t.kind === "movie" ? dur(eps[0]?.duration) : `${eps.length} episode${eps.length === 1 ? "" : "s"}`;
+  const concept = isConcept(t);
+  const soon = (concept || isSoon(t)) && !(S.admin && first); // admins can still test a title once a video is uploaded
+  // What a free viewer gets, worked out from the actual episodes.
+  const free = eps.filter((e) => freeEpisode(t, e));
+  const run = free.length && free.every((e, k) => e.n === k + 1);
+  const what = t.kind === "movie" ? "movie" : "episodes";
+  let access;
+  if (concept) access = "Concept showcase · not scheduled for release";
+  else if (soon) access = relDate(t) ? `Coming soon · releasing ${relDate(t)}` : "Coming soon · release date to be announced";
+  else if (!t.premium) access = "Available now · free with ads";
+  else if (S.premium) access = "Available now · included in your Premium plan";
+  else if (!free.length) access = `Available now · in the ₹${PRICE} Premium plan`;
+  else if (free.length === eps.length) access = "Available now · free with ads";
+  else access = `Available now · ${run ? (free.length === 1 ? "episode 1" : `episodes 1–${free.length}`) : `${free.length} of ${eps.length} episodes`} free with ads, the rest in the ₹${PRICE} plan`;
+  const locks = !S.premium && t.premium && free.length < eps.length;
+  const note = concept ? "This is a concept for a fictional film in development. The video is an animated poster teaser, not footage from a film."
+    : soon ? "Not out yet. Add it to My List and you'll find it there on release."
+    : locks ? `Get Premium for ₹${PRICE} a month to watch ${t.kind === "movie" ? "this movie" : free.length ? "the rest" : "all episodes"} without ads.` : "";
+  const runtime = t.kind === "movie" ? dur(eps[0]?.duration) : eps.length ? `${eps.length} episode${eps.length === 1 ? "" : "s"}` : "";
   const words = (x) => new Set(String(x.genre || "").toLowerCase().split(/[^a-z-]+/).filter((w) => w.length > 2));
   const mine = words(t);
-  const like = visible().filter((x) => x.id !== t.id).map((x) => [x, [...words(x)].filter((w) => mine.has(w)).length + (x.lang === t.lang ? 0.5 : 0)])
-    .filter(([, n]) => n >= 1).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([x]) => x);
+  const like = visible().filter((x) => x.id !== t.id).map((x) => [x, [...words(x)].filter((w) => mine.has(w)).length + (x.lang === t.lang ? 0.5 : 0) + (avail(x) ? 1 : 0)])
+    .filter(([, n]) => n >= 1.5).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([x]) => x);
+  const facts = [
+    ["Runtime", runtime],
+    ["Release", t.releaseDate && !soon ? relDate(t) : t.year || ""],
+    ["Director", t.director || ""],
+    ["Cast", (t.cast || []).join(", ")],
+    ["Audio", t.audio || (avail(t) ? t.lang : "")],
+    ["Subtitles", t.subtitles || (avail(t) ? "None yet" : "")],
+    ["Genre", t.genre || ""],
+    ["Age rating", `${t.rating || "U"}${t.descriptor ? ` · ${t.descriptor}` : ""}`],
+  ].filter(([, v]) => v);
+  const playLabel = p ? (t.kind === "movie" ? "Resume" : `Continue ep ${first?.n}`) : S.premium || !t.premium ? (t.kind === "movie" ? "Play" : "Play episode 1") : free.length ? (t.kind === "movie" ? "Watch free" : "Watch episode 1 free") : "";
   return `<div class="dback" style="${t.poster ? `background-image:url('${String(t.poster).replace(/'/g, "%27")}')` : posterStyle(t)}" aria-hidden="true"></div>
   <div class="detail ${t.format === "v" ? "v" : ""}">
-    <div class="dposter" style="${posterStyle(t)}">${t.teaser ? teaserVideo(t) : t.poster ? "" : `<div class="pt">${esc(t.title)}</div>`}</div>
+    <div class="dposter" style="${posterStyle(t)}">${t.teaser ? teaserVideo(t) : t.poster ? "" : `<div class="pt">${esc(t.title)}</div>`}${concept && t.teaser ? `<span class="artlbl">Animated poster teaser</span>` : ""}</div>
     <div class="dbody">
-      <span class="eyebrow">${t.original ? "Lifeofline Original · " : ""}${esc(KINDS[t.kind] || "")}${t.format === "v" ? " · vertical" : ""}</span>
+      <span class="eyebrow">${esc(eyebrow(t))}${t.format === "v" ? " · vertical" : ""}</span>
       <h1>${esc(t.title)}</h1>
-      <div class="meta"><span class="rating" title="Age rating">${esc(t.rating)}</span><span>${esc(t.genre || "")}</span><span>${esc(t.lang || "")}</span>${runtime ? `<span>${esc(runtime)}</span>` : ""}${t.year ? `<span>${esc(t.year)}</span>` : ""}</div>
-      ${t.descriptor ? `<p class="descr">Content: ${esc(t.descriptor)}</p>` : ""}
-      <p class="desc">${esc(t.desc || "")}</p>
-      ${t.cast?.length ? `<p class="small">Cast: ${esc(t.cast.join(", "))}</p>` : ""}
+      <div class="meta"><span class="rating" title="Age rating">${esc(t.rating || "U")}</span><span>${esc(t.genre || "")}</span><span>${esc(t.lang || "")}</span>${runtime ? `<span>${esc(runtime)}</span>` : ""}</div>
+      <p class="avail ${soon ? "no" : "yes"}">${esc(access)}</p>
+      ${t.synopsis ? `<p class="desc">${esc(t.synopsis)}</p>${t.desc && t.desc !== t.synopsis ? `<p class="tagline">“${esc(t.desc)}”</p>` : ""}` : `<p class="desc">${esc(t.desc || "")}</p>`}
       <div class="row">
-        ${soon ? `<span class="badge soon">Coming soon</span>` : first ? `<button class="btn gold" data-play="${esc(t.id)}" data-ep="${esc(first.id)}" data-nav>▶ ${p ? (t.kind === "movie" ? "Resume" : `Continue ep ${first.n}`) : t.kind === "movie" ? "Play" : "Play episode 1"}</button>` : `<span class="small">Coming soon</span>`}
-        ${t.trailerUid || t.teaser ? `<button class="btn ${soon ? "gold" : "ghost"}" data-trailer="${esc(t.id)}" data-nav>▶ ${t.trailerUid ? "Trailer" : "Teaser"}</button>` : ""}
+        ${soon ? "" : first && playLabel ? `<button class="btn gold" data-play="${esc(t.id)}" data-ep="${esc(first.id)}" data-nav>▶ ${playLabel}</button>` : !first ? "" : `<a class="btn gold" href="#plans" data-nav>Subscribe to watch · ₹${PRICE}</a>`}
+        ${t.trailerUid || t.teaser ? `<button class="btn ${soon ? "gold" : "ghost"}" data-trailer="${esc(t.id)}" data-nav>▶ ${t.trailerUid ? "Trailer" : "Poster teaser"}</button>` : ""}
         <button class="btn ghost" data-listtog="${esc(t.id)}" data-nav>${S.list.includes(t.id) ? "✓ In My List" : "＋ My List"}</button>
         <button class="btn ghost" data-share="${esc(t.id)}" data-nav>Share</button>
       </div>
-      ${note ? `<p class="small">${note}${soon ? "" : ` <a href="#plans">See the plan</a>`}</p>` : ""}
-      ${soon && S.admin ? `<p class="small">Admin: upload the film in <a href="#admin">Admin</a>, then untick “Coming soon”.</p>` : ""}
+      ${note ? `<p class="small">${esc(note)}${locks ? ` <a href="#plans">See the plan</a>` : ""}</p>` : ""}
+      ${soon && S.admin ? `<p class="small">Admin: ${concept ? "untick “Concept showcase” and add a release date when this becomes a real production. " : ""}Upload the film in <a href="#admin">Admin</a>, then untick “Coming soon”.</p>` : ""}
+      <dl class="facts">${facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>
       ${t.kind !== "movie" && eps.length ? `<h3>Episodes</h3><div class="eps">${eps.map((e) => {
         const ep = S.progress[id]?.epId === e.id ? S.progress[id] : null;
+        const done = ep && ep.dur && ep.pos / ep.dur > 0.9;
         return `<button class="ep" data-play="${esc(t.id)}" data-ep="${esc(e.id)}" data-nav>
           <span class="n">${String(e.n).padStart(2, "0")}</span>
           <span class="thumb" style="${posterStyle(t)}"></span>
-          <span class="info"><b>${esc(e.name || "Episode " + e.n)}</b><span>${esc(dur(e.duration))}${ep ? " · watching" : ""}</span></span>
+          <span class="info"><b>${esc(e.name || "Episode " + e.n)}</b><span>${esc(dur(e.duration))}${done ? " · watched" : ep ? " · watching" : ""}</span></span>
           ${locked(e) ? `<span class="lock">₹${PRICE} plan</span>` : !S.premium ? `<span class="free">Free · ads</span>` : ""}</button>`;
       }).join("")}</div>` : ""}
     </div></div>
     ${like.length ? `<section class="rail"><div class="rail-h"><h2>More like this</h2></div><div class="grid">${like.map((x) => tile(x, "tall")).join("")}</div></section>` : ""}`;
 }
 
+// Plain answers to what people ask before paying. `limit` shows the first few (Home); Plans shows them all.
+function faqHtml(ready, limit = 99) {
+  const names = ready.slice(0, 4).map((t) => t.title);
+  const renew = S.billing === "subscription"
+    ? `Premium renews every month through UPI Autopay, card or netbanking. Your bank or UPI app notifies you before each ₹${PRICE} charge.`
+    : `Premium is a 30-day pass for ₹${PRICE}. It doesn't renew by itself; we email you 3 days before it ends and you pay again to continue.`;
+  const qa = [
+    ["What can I watch today?", ready.length ? `${ready.length} title${ready.length === 1 ? " is" : "s are"} available now${names.length ? `, including ${names.join(", ")}` : ""}. New films and series are added regularly; the concept showcase is not available to watch yet.` : "New films and series are being added now. The concept showcase shows films in development; their animated poster teasers are free to watch."],
+    ["How do I cancel?", `Open Account → Plan → Cancel renewal. You keep Premium until the end of the period you paid for, and you can also cancel the UPI Autopay mandate in your UPI app.`],
+    ["Can I watch on my TV?", "Yes. Open movies.lifeofline.com in the browser of an Android TV, Google TV or Fire TV and sign in; it switches to a TV layout you can use with the remote. TV and phone apps in the stores are coming."],
+    ["Which devices work?", "Android phones and iPhones (in the browser, or add it to your home screen), computers (Chrome, Edge, Safari or Firefox) and smart TVs with a browser. Sign in with the same account everywhere; Continue watching follows you."],
+    ["How many screens at once?", "Premium is for you and your household. Sign in on your own devices; please don't share your account outside your home."],
+    ["How does renewal work?", renew],
+    ["How can I pay?", "UPI (GPay, PhonePe, Paytm and others), debit and credit cards, and netbanking, through Razorpay. Prices include GST."],
+    ["What is free?", "Titles marked Free, and the first episodes of some series, play with short ad breaks. Poster teasers and trailers are free for everyone."],
+  ];
+  return `<div class="faq">${qa.slice(0, limit).map(([q, a]) => `<details><summary>${esc(q)}</summary><p>${esc(a)}</p></details>`).join("")}${limit < qa.length ? `<a class="small" href="#plans" data-nav>All questions</a>` : ""}</div>`;
+}
+
 function vPlans() {
   const s = S.sub, active = S.premium;
+  const ready = visible().filter(avail);
   return `<div class="ptitle"><div><span class="eyebrow">Plans</span><h1>One price. Everything unlocked.</h1></div></div>
-  <div class="plans">
+  <div class="plans two">
     <div class="plan"><span class="pk">Always free</span><h3>Free with ads</h3><div class="amt">₹0</div>
-      <ul><li>Free titles and first episodes</li><li>Short ad breaks</li><li>Phone, computer and TV</li><li class="no">Premium titles</li></ul>
+      <ul><li>Titles marked Free and some first episodes</li><li>Poster teasers and trailers</li><li>Short ad breaks</li><li>Phone, computer and TV browser</li><li class="no">Premium titles</li></ul>
       <a class="btn ghost" href="#home" data-nav>Keep watching free</a></div>
-    <div class="plan hl"><span class="pk gold">Premium</span><h3>Premium Monthly</h3><div class="amt">₹${PRICE}<small> / month</small></div>
-      <ul><li>Every movie, series and short drama</li><li>No ads</li><li>Full HD</li><li>Phone, computer and TV</li><li>Cancel anytime</li></ul>
+    <div class="plan hl"><span class="pk gold">Premium</span><h3>Premium</h3><div class="amt">₹${PRICE}<small> / month</small></div>
+      <ul><li>Every available film, series and short drama${ready.length ? ` (${ready.length} today)` : ""}</li><li>No ads</li><li>Full HD where the video has it</li><li>Phone, computer and TV browser</li><li>Cancel anytime</li></ul>
       ${active ? `<a class="btn" href="#account" data-nav>Your plan · till ${day(s?.until)}</a>` : `<button class="btn gold" data-subscribe data-nav>Subscribe for ₹${PRICE}</button>`}
-      <p class="small">${S.billing === "subscription" ? "Renews monthly through UPI Autopay, card or netbanking. You get a notice before each charge." : S.billing === "pass" ? "30 days of Premium. We'll remind you before it ends; pay again to renew." : DEMO ? "Demo mode: no money is taken." : "Pay with UPI, card or netbanking."}</p></div>
-    <div class="plan soon"><span class="pk">Coming later</span><h3>Yearly and Family + TV</h3><ul><li>A yearly plan with about 3 months free</li><li>More screens and profiles for the whole family</li></ul></div>
+      <p class="small">${S.billing === "subscription" ? "Renews monthly through UPI Autopay, card or netbanking. You get a notice before each charge." : S.billing === "pass" ? "A 30-day pass. We email you before it ends; pay again to renew. It never charges you by itself." : DEMO ? "Demo mode: no money is taken." : "Pay with UPI, card or netbanking."}</p></div>
   </div>
+  <h2 class="faqh">Questions</h2>
+  ${faqHtml(ready)}
   <p class="small">Prices include GST. Lifeofline Movies is run by Lifeofline Pvt Ltd. <a href="refund.html">Cancellation and refunds</a> · <a href="terms.html">Terms</a></p>`;
 }
 
@@ -460,11 +559,12 @@ function confirmSheet(html, okLabel, onOk) {
 const pinHash = async (pin) => { const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("lm-kids:" + pin)); return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join(""); };
 
 document.addEventListener("click", async (e) => {
-  const el = e.target.closest("[data-play],[data-trailer],[data-lang],[data-hero],[data-listtog],[data-share],[data-subscribe],[data-signout],[data-cancel],[data-dob],[data-kidson],[data-kidsoff],[data-tvtog],[data-google],[data-verify],[data-claim],[data-demo-reset]");
+  const el = e.target.closest("[data-play],[data-trailer],[data-lang],[data-avail],[data-hero],[data-listtog],[data-share],[data-subscribe],[data-signout],[data-cancel],[data-dob],[data-kidson],[data-kidsoff],[data-tvtog],[data-google],[data-verify],[data-claim],[data-demo-reset]");
   if (!el) return;
   if (el.dataset.play) return play(el.dataset.play, el.dataset.ep);
   if (el.dataset.trailer) return play(el.dataset.trailer, null, true);
   if (el.dataset.lang) { S.lang = el.dataset.lang; store.set("lang", S.lang); S.keepScroll = true; return route(); }
+  if (el.dataset.avail) { S.avail = el.dataset.avail; S.keepScroll = true; return route(); }
   if (el.dataset.listtog) {
     try { const on = await api.toggleList(el.dataset.listtog); S.list = on ? [el.dataset.listtog, ...S.list] : S.list.filter((x) => x !== el.dataset.listtog); toast(on ? "Added to My List" : "Removed from My List");
       // Update the buttons in place so the banner doesn't jump back to its first slide.

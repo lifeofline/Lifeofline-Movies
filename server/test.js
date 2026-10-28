@@ -129,6 +129,15 @@ async function req(port, p, body, token) {
   r = await req(port, "/admin", { action: "grant", email: "nobody@x.com", days: 30 }, "boss"); assert.equal(r.status, 404);
   r = await req(port, "/play", { titleId: "draft" }, "boss"); assert.equal(r.status, 200, "admins can preview drafts");
 
+  // viewing numbers
+  r = await req(port, "/event", { type: "start", titleId: "short1", epId: "e1" }); assert.equal(r.status, 200);
+  r = await req(port, "/event", { type: "error", titleId: "short1", code: "media-4" }); assert.equal(r.status, 200);
+  r = await req(port, "/event", { type: "nonsense" }); assert.equal(r.status, 400);
+  r = await req(port, "/event", { type: "report", titleId: "short1", error: { title: "This video stopped loading.", code: "x" }, ua: "test" }); assert.equal(r.status, 200);
+  const today = [...data.keys()].find((k) => k.startsWith("stats/day-"));
+  assert.ok(today, "daily stats written"); assert.equal(data.get(today).start, 1); assert.equal(data.get(today).error, 1);
+  assert.equal([...data.keys()].filter((k) => k.startsWith("playbackProblems/")).length, 2, "error + report stored");
+
   // webhook: needs the secret and a valid signature; ignores ArtistCart's payments
   r = await req(port, "/pay/webhook", { event: "x" }); assert.equal(r.status, 400);
   srv.close();

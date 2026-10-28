@@ -58,6 +58,8 @@ export function createDemoApi() {
     async ads() { return wait(D.ads.filter((a) => a.active)); },
     async profile() { return wait(D.user ? { name: D.user.name, adult: D.adult } : null); },
 
+    track() {},
+    async reportProblem() { return wait(true); },
     async play(titleId, epId, trailer) {
       const t = D.titles[titleId]; if (!t) throw err("This title isn't available.");
       const base = { ads: !premium(), premium: premium(), rating: t.rating, title: t.title, format: t.format, hls: SAMPLE_HLS, poster: "", test: true };

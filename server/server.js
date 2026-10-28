@@ -124,6 +124,41 @@ async function me(uid, body) {
   throw show("bad request");
 }
 
+/* ---------- viewing numbers ---------- */
+// The app reports: start (a video began playing), complete (90% watched), error, teaser (teaser played),
+// report (viewer pressed "Report a problem"), signup (new account). Counted per day and per title for Admin → Numbers.
+const EVENT_TYPES = new Set(["start", "complete", "error", "teaser", "report", "signup"]);
+const dayKey = (ms = Date.now()) => new Date(ms + 5.5 * 36e5).toISOString().slice(0, 10); // India date
+const ipHits = new Map();
+function tooMany(ip) {
+  const now = Date.now(), h = ipHits.get(ip) || { n: 0, t: now };
+  if (now - h.t > 60e3) { h.n = 0; h.t = now; }
+  h.n++; ipHits.set(ip, h);
+  if (ipHits.size > 5000) ipHits.clear();
+  return h.n > 60;
+}
+async function recordEvent(uid, body, ip) {
+  const type = String(body?.type || "");
+  if (!EVENT_TYPES.has(type)) throw show("bad request");
+  if (tooMany(ip)) return { ok: true, skipped: true };
+  const titleId = ID.test(String(body.titleId || "")) ? String(body.titleId) : "";
+  const epId = ID.test(String(body.epId || "")) ? String(body.epId) : "";
+  const inc = { [type]: FieldValue.increment(1) };
+  const day = dayKey();
+  const writes = [db.doc(`stats/day-${day}`).set({ day, ...inc }, { merge: true })];
+  if (titleId) writes.push(db.doc(`titleStats/${titleId}`).set({ ...inc, updatedAt: Date.now() }, { merge: true }));
+  if (type === "error" || type === "report") {
+    const detail = type === "report" ? body.error || {} : { code: body.code || "" };
+    writes.push(db.collection("playbackProblems").add({
+      type, titleId, epId, uid: uid || "", day, at: Date.now(),
+      code: String(detail.code || "").slice(0, 120), message: String(detail.msg || detail.title || "").slice(0, 300),
+      title: String(body.title || "").slice(0, 120), ua: String(body.ua || "").slice(0, 200),
+    }));
+  }
+  await Promise.all(writes);
+  return { ok: true };
+}
+
 /* ---------- admins ---------- */
 async function admin(uid, body) {
   if (!(await db.doc(`admins/${uid}`).get()).exists) throw show("Admins only", 403);
@@ -144,7 +179,18 @@ async function admin(uid, body) {
       db.collection("titles").count().get(),
       db.collection("users").count().get(),
     ]);
-    return { premium: subs.data().count, titles: titles.data().count, users: users.data().count, billing: billing.MODE, video: stream.LIVE ? "live" : "test" };
+    const days = Array.from({ length: 7 }, (_, k) => dayKey(t - k * 864e5));
+    const [daySnaps, topSnap, problems] = await Promise.all([
+      Promise.all(days.map((d) => db.doc(`stats/day-${d}`).get())),
+      db.collection("titleStats").orderBy("start", "desc").limit(10).get(),
+      db.collection("playbackProblems").orderBy("at", "desc").limit(15).get(),
+    ]);
+    return {
+      premium: subs.data().count, titles: titles.data().count, users: users.data().count, billing: billing.MODE, video: stream.LIVE ? "live" : "test",
+      days: daySnaps.map((d, k) => ({ day: days[k], ...(d.data() || {}) })),
+      top: topSnap.docs.map((d) => ({ id: d.id, ...d.data() })),
+      problems: problems.docs.map((d) => d.data()),
+    };
   }
   throw show("bad request");
 }
@@ -159,7 +205,7 @@ const hourly = () => { if (Date.now() - lastHourly < 36e5) return; lastHourly = 
 const server = http.createServer(async (req, res) => {
   if (req.method === "OPTIONS") { res.writeHead(204, cors); return res.end(); }
   if (req.method === "GET" && (req.url === "/health" || req.url === "/")) { hourly(); return reply(res, 200, { ok: true, billing: billing.MODE, video: stream.LIVE ? "live" : "test", price: billing.PRICE }); }
-  const routes = ["/play", "/sub", "/me", "/admin", "/pay/webhook"];
+  const routes = ["/play", "/sub", "/me", "/admin", "/event", "/pay/webhook"];
   if (req.method !== "POST" || !routes.includes(req.url)) return reply(res, 404, { error: "not found" });
   let raw = "";
   const cap = req.url === "/pay/webhook" ? 200000 : 5000;
@@ -172,6 +218,7 @@ const server = http.createServer(async (req, res) => {
       let uid = null;
       if (token) uid = (await auth.verifyIdToken(token)).uid;
       if (req.url === "/play") return reply(res, 200, { result: await play(uid, body) });
+      if (req.url === "/event") return reply(res, 200, { result: await recordEvent(uid, body, String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim()) });
       if (!uid) return reply(res, 401, { error: "Sign in first." });
       if (req.url === "/sub") {
         try { const r = await billing.handle(uid, body); return reply(res, r.status, r.body); }

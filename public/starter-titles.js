@@ -1,9 +1,10 @@
-// The 20 Lifeofline films with posters but no video yet. They show as "Coming soon" until a video is uploaded
-// in Admin and "Coming soon" is unticked. Taglines and genres are read from the posters; check the age
-// ratings in Admin (the IT Rules make the publisher responsible for them).
+// The 20 Lifeofline film concepts: posters and 5-second animated poster teasers, no film footage.
+// They are shown as "Concept showcase · fictional film", never as scheduled releases. When one becomes a real
+// production, untick "Concept showcase" in Admin, add a release date, and later upload the film.
+// Taglines and genres are read from the posters; check the age ratings in Admin.
 const t = (n, id, title, tagline, genre, rating, lang = "Hindi") => ({
   id: "lol-" + id, title, desc: tagline, genre, rating, lang,
-  kind: "movie", format: "h", premium: true, original: true, published: true, comingSoon: true,
+  kind: "movie", format: "h", premium: true, original: false, concept: true, published: true, comingSoon: true,
   poster: `posters/${String(n).padStart(2, "0")}-${id}.jpg`, order: 100 + n,
   teaser: `teasers/${String(n).padStart(2, "0")}-${id}.mp4`, // 5-second silent animated poster (720×900)
 });
@@ -31,9 +32,13 @@ export const STARTER_TITLES = [
   t(20, "shehar-ke-raaz", "Shehar Ke Raaz", "Har shehar ki ek andaruni duniya hoti hai.", "Crime · Underworld · Thriller", "U/A 16+"),
 ];
 
-// Titles already saved in Firestore before teasers existed pick up the poster and teaser from here.
+// Titles saved in Firestore earlier pick up the poster, teaser and concept label from here,
+// unless an admin has since set "Concept showcase" on the title themselves.
 const BY_ID = Object.fromEntries(STARTER_TITLES.map((x) => [x.id, x]));
 export const withStarter = (title) => {
   const st = title && BY_ID[title.id];
-  return st ? { ...title, poster: title.poster || st.poster, teaser: title.teaser || st.teaser } : title;
+  if (!st) return title;
+  const out = { ...title, poster: title.poster || st.poster, teaser: title.teaser || st.teaser };
+  if (title.concept === undefined) { out.concept = true; out.original = false; }
+  return out;
 };

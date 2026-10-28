@@ -1,11 +1,25 @@
 // The player: age-rating card → ad break (free plan) → the video, with a mid-roll on long titles for free viewers.
-// Plays HLS from Cloudflare Stream (native on Safari/iOS/most TVs, hls.js elsewhere). Saves where you stopped.
+// Plays HLS from Cloudflare Stream with hls.js wherever the browser supports it, and the browser's own HLS only where
+// hls.js can't run (iPhone Safari). Newer Chrome also claims native HLS but fails on some streams, so hls.js comes first.
+// Saves where you stopped, reports starts / completions / errors (Admin → Numbers) and never leaves a spinner forever.
 import { $, esc, clock, loadScript, toast } from "./util.js";
 import { freeEpisode } from "./access.js";
 
 const HLS_JS = "https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.15/hls.min.js";
 const RATING_MS = 2800;
 const MIDROLL_MIN_SEC = 600; // titles longer than 10 minutes get one mid-roll for free viewers
+const START_TIMEOUT_MS = 20000; // no picture after this long = show a clear error with Retry
+const track = (P, type, extra = {}) => { try { P.api.track?.(type, { titleId: P.title.id, epId: P.ep?.id || "", ...extra }); } catch { /* best effort */ } };
+
+// A clear message with Retry and Report a problem, in place of a spinner or a black screen.
+function errCard(P, title, msg, code = "") {
+  if (P.destroyed) return;
+  P.phase = "error"; clearTimeout(P.startT);
+  P.lastError = { title, msg, code };
+  track(P, "error", { code: String(code || title).slice(0, 80) });
+  layer(P, `<div class="pcard"><span class="eyebrow">Playback problem</span><h3>${esc(title)}</h3><p>${esc(msg)}</p>
+    <div class="row"><button class="btn gold" data-pretry>Retry</button><button class="btn ghost" data-preport>Report a problem</button><button class="btn ghost" data-pclose>Close</button></div></div>`);
+}
 
 let current = null;
 
@@ -47,26 +61,27 @@ export async function openPlayer(opts) {
 function layer(P, html) { const l = $("#plyr", P.ov); l.innerHTML = html; l.hidden = !html; P.ov.classList.toggle("has-layer", !!html); }
 
 async function start(P, epId, trailer, startAt) {
-  P.phase = "load"; P.midDone = false;
+  P.phase = "load"; P.midDone = false; P.completed = false; clearTimeout(P.startT);
   layer(P, `<div class="pcard"><span class="spin" aria-label="Loading"></span></div>`);
   let r;
   // A teaser stored with the site (a plain MP4) plays straight away; everything else asks the server for a signed link.
   try { r = trailer && P.direct ? { hls: P.direct, ads: false, premium: false, rating: P.title.rating || "U", test: false } : await P.api.play(P.title.id, epId, trailer); }
   catch (e) {
     if (P.destroyed) return;
-    if (e.needPlan) return layer(P, `<div class="pcard"><span class="eyebrow">Premium</span><h3>${esc(e.message)}</h3><p>Unlock every movie, series and short drama with no ads.</p><div class="row"><button class="btn gold" data-pplan>See the ₹99 plan</button>${P.title.trailerUid || P.direct ? `<button class="btn ghost" data-ptrailer>Watch ${P.direct ? "teaser" : "trailer"}</button>` : ""}</div></div>`);
+    if (e.needPlan) return layer(P, `<div class="pcard"><span class="eyebrow">Premium</span><h3>${esc(e.message)}</h3><p>Unlock every movie, series and short drama with no ads.</p><div class="row"><button class="btn gold" data-pplan>See the ₹99 plan</button>${P.title.trailerUid || P.direct ? `<button class="btn ghost" data-ptrailer>Watch ${P.direct ? "poster teaser" : "trailer"}</button>` : ""}</div></div>`);
     if (e.needSignIn) return layer(P, `<div class="pcard"><h3>${esc(e.message)}</h3><button class="btn gold" data-psignin>Sign in</button></div>`);
     if (e.needAge) return layer(P, `<div class="pcard"><span class="eyebrow">Rated A · 18+</span><h3>${esc(e.message)}</h3><button class="btn gold" data-page>Add date of birth</button></div>`);
-    return layer(P, `<div class="pcard"><h3>${esc(e.message)}</h3><button class="btn ghost" data-pretry>Try again</button></div>`);
+    return errCard(P, "This video couldn't start.", e.message, e.status ? "api-" + e.status : "api");
   }
   if (P.destroyed) return;
   P.res = r; P.trailer = !!trailer;
   P.ep = trailer ? null : (P.episodes || []).find((x) => x.id === r.epId) || { id: r.epId, n: r.n, name: r.name };
-  $("#pname", P.ov).textContent = trailer ? `${P.title.title} · ${P.direct ? "Teaser" : "Trailer"}` : P.title.kind === "movie" ? P.title.title : `${P.title.title} · Ep ${r.n}`;
+  $("#pname", P.ov).textContent = trailer ? `${P.title.title} · ${P.direct ? "Animated poster teaser" : "Trailer"}` : P.title.kind === "movie" ? P.title.title : `${P.title.title} · Ep ${r.n}`;
   const nx = nextEp(P); $("#pnext", P.ov).hidden = !nx;
   if (r.poster) P.video.poster = r.poster;
 
-  await attach(P, r.hls).catch((e) => { P.phase = "error"; layer(P, `<div class="pcard"><h3>The video didn't load.</h3><p>${esc(e.message)}</p><button class="btn ghost" data-pretry>Try again</button></div>`); });
+  P.started = false; P.netRetries = 0;
+  await attach(P, r.hls).catch((e) => errCard(P, "This video didn't load.", e.message, "attach"));
   if (P.destroyed || P.phase === "error") return;
 
   // 1. Age rating and content descriptor, shown before every title (IT Rules 2021).
@@ -84,6 +99,9 @@ async function start(P, epId, trailer, startAt) {
   if (resume) P.video.addEventListener("loadedmetadata", () => { if (resume < (P.video.duration || 0) - 30) P.video.currentTime = resume; }, { once: true });
   if (resume && P.video.readyState >= 1 && resume < P.video.duration - 30) P.video.currentTime = resume;
   playSafe(P);
+  // Watchdog: if no picture arrives, say so instead of a black screen.
+  clearTimeout(P.startT);
+  P.startT = setTimeout(() => { if (!P.started && P.phase === "play") errCard(P, "This video is taking too long to start.", "Check your internet connection and try again. If it keeps happening, report it and we'll look into it.", "start-timeout"); }, START_TIMEOUT_MS);
   if (r.test) toast("Demo stream: real videos play once Cloudflare is set up.", 3000);
 }
 
@@ -91,9 +109,13 @@ async function attach(P, src) {
   const v = P.video;
   if (P.hls) { P.hls.destroy(); P.hls = null; }
   const q = $("#pq", P.ov); q.innerHTML = `<option value="-1">Auto</option>`; q.hidden = true;
-  if (/\.mp4(\?|$)/i.test(src) || v.canPlayType("application/vnd.apple.mpegurl")) { v.src = src; return; }
-  await loadScript(HLS_JS);
-  if (!window.Hls?.isSupported()) { v.src = src; return; }
+  if (/\.mp4(\?|$)/i.test(src)) { v.src = src; return; }
+  const native = !!v.canPlayType("application/vnd.apple.mpegurl");
+  try { await loadScript(HLS_JS); } catch { if (native) { v.src = src; return; } throw new Error("The video player didn't load. Check your connection and try again."); }
+  if (!window.Hls?.isSupported()) {
+    if (native) { v.src = src; return; }
+    throw new Error("This browser can't play this video. Try the latest Chrome, Safari or Edge.");
+  }
   const hls = P.hls = new window.Hls({ capLevelToPlayerSize: true, maxBufferLength: 30 });
   hls.on(window.Hls.Events.MANIFEST_PARSED, (_, d) => {
     const lv = d.levels.map((l, i) => ({ i, h: l.height })).filter((l) => l.h).sort((a, b) => b.h - a.h);
@@ -102,9 +124,12 @@ async function attach(P, src) {
   });
   hls.on(window.Hls.Events.ERROR, (_, d) => {
     if (!d.fatal) return;
-    if (d.type === window.Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
-    else if (d.type === window.Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
-    else { P.phase = "error"; layer(P, `<div class="pcard"><h3>The video stopped.</h3><p>The link may have expired. Try again.</p><button class="btn ghost" data-pretry>Try again</button></div>`); }
+    const code = `${d.type}:${d.details}${d.response?.code ? ":" + d.response.code : ""}`;
+    if (d.type === window.Hls.ErrorTypes.NETWORK_ERROR && P.netRetries++ < 2) return hls.startLoad();
+    if (d.type === window.Hls.ErrorTypes.MEDIA_ERROR && P.netRetries++ < 2) return hls.recoverMediaError();
+    const forbidden = d.response?.code === 401 || d.response?.code === 403;
+    errCard(P, forbidden ? "This video link has expired." : "This video stopped loading.",
+      forbidden ? "Press Retry to get a fresh link." : "Check your internet connection and press Retry. If it keeps happening, report it.", code);
   });
   hls.loadSource(src); hls.attachMedia(v);
 }
@@ -161,6 +186,17 @@ function wire(P) {
   ppb.innerHTML = ICON_PLAY;
   const wake = () => { ov.classList.remove("idle"); clearTimeout(P.idleT); P.idleT = setTimeout(() => { if (!v.paused) ov.classList.add("idle"); }, 3200); };
   v.addEventListener("play", () => { ppb.innerHTML = ICON_PAUSE; wake(); });
+  v.addEventListener("playing", () => {
+    ov.classList.remove("buffering");
+    if (!P.started && P.phase === "play") { P.started = true; clearTimeout(P.startT); track(P, P.trailer ? "teaser" : "start"); }
+  });
+  v.addEventListener("waiting", () => { if (P.phase === "play") ov.classList.add("buffering"); });
+  v.addEventListener("error", () => {
+    if (P.phase === "load" || P.phase === "error" || !v.getAttribute("src") && !P.hls) return;
+    const c = v.error?.code; // 1 aborted, 2 network, 3 decode, 4 not supported
+    errCard(P, c === 4 ? "This video format isn't supported here." : c === 3 ? "This video couldn't be decoded." : "This video stopped loading.",
+      c === 4 ? "Try the latest Chrome, Safari or Edge, or another device. Please report it so we can check the file." : "Press Retry. If it keeps happening, report it and we'll check the video.", "media-" + (c || "?"));
+  });
   v.addEventListener("pause", () => { ppb.innerHTML = ICON_PLAY; ov.classList.remove("idle"); save(P); });
   v.addEventListener("timeupdate", () => {
     const d = v.duration || 0;
@@ -169,10 +205,12 @@ function wire(P) {
     if (P.res?.ads && !P.trailer && d > MIDROLL_MIN_SEC) { cue.hidden = P.midDone; cue.style.left = "50%"; }
     if (P.res?.ads && !P.trailer && !P.midDone && d > MIDROLL_MIN_SEC && v.currentTime > d / 2 && P.phase === "play") { P.midDone = true; adBreak(P, "Mid-roll"); }
     if (Date.now() - P.saveT > 10e3) { P.saveT = Date.now(); save(P); }
+    if (!P.trailer && !P.completed && d > 60 && v.currentTime / d > 0.9) { P.completed = true; track(P, "complete"); }
   });
   v.addEventListener("progress", () => { try { const d = v.duration; if (d && v.buffered.length) buf.style.width = (v.buffered.end(v.buffered.length - 1) / d) * 100 + "%"; } catch { /* ignore */ } });
   v.addEventListener("ended", () => {
     save(P);
+    if (!P.trailer && !P.completed) { P.completed = true; track(P, "complete"); }
     const nx = nextEp(P);
     if (!nx) return layer(P, `<div class="pcard"><span class="eyebrow">Finished</span><h3>Thanks for watching</h3><button class="btn ghost" data-pclose>Close</button></div>`);
     let n = 5;
@@ -194,6 +232,12 @@ function wire(P) {
     if (b.hasAttribute("data-pgo")) { clearInterval(P.countT); return goNext(P, nextEp(P)); }
     if (b.hasAttribute("data-pfs")) { const el = $("#pstage", ov); (document.fullscreenElement ? document.exitFullscreen() : el.requestFullscreen?.())?.catch?.(() => {}); return; }
     if (b.hasAttribute("data-pretry")) return start(P, P.ep?.id || P.epId, P.trailer, Math.floor(v.currentTime || 0));
+    if (b.hasAttribute("data-preport")) {
+      b.disabled = true;
+      Promise.resolve(P.api.reportProblem?.({ titleId: P.title.id, epId: P.ep?.id || P.epId || "", title: P.title.title, error: P.lastError, ua: navigator.userAgent.slice(0, 200) }))
+        .then(() => { b.textContent = "Reported, thank you"; }).catch(() => { b.disabled = false; toast("Couldn't send the report. Try again."); });
+      return;
+    }
     if (b.hasAttribute("data-ptrailer")) return start(P, null, true, 0);
     const after = (fn) => { const cb = P[fn]; closePlayer(); setTimeout(() => cb?.(), 50); };
     if (b.hasAttribute("data-pplan")) return after("onNeedPlan");
@@ -230,7 +274,7 @@ function teardown(fromCode) {
   const P = current; if (!P) return;
   P.destroyed = true; current = null;
   save(P);
-  clearInterval(P.countT); clearTimeout(P.idleT);
+  clearInterval(P.countT); clearTimeout(P.idleT); clearTimeout(P.startT);
   document.removeEventListener("keydown", P.onKey);
   window.removeEventListener("popstate", P.onPop);
   try { P.video.pause(); P.hls?.destroy(); P.video.removeAttribute("src"); P.video.load(); } catch { /* ignore */ }

@@ -2,6 +2,7 @@
 // Opens at #admin for accounts listed in the admins collection (see SETUP.md).
 import { $, esc, dur, posterStyle, toast, hues } from "./util.js";
 import { LANGS, KINDS, RATINGS } from "./access.js";
+import { withStarter } from "./starter-titles.js";
 
 export async function mountAdmin(root, { api, reload }) {
   const A = { tab: "titles", titles: [], editing: null, eps: [], ads: [], busy: false };
@@ -13,9 +14,32 @@ export async function mountAdmin(root, { api, reload }) {
     root.innerHTML = `<div class="ptitle"><div><span class="eyebrow">Admin</span><h1>Lifeofline Movies</h1></div><span>${api.mode === "demo" ? "Demo mode: changes stay in this browser" : ""}</span></div>
       <div class="chips">${tabs.map(([k, l]) => `<button class="chip ${A.tab === k ? "on" : ""}" data-atab="${k}" data-nav>${l}</button>`).join("")}</div>
       <div id="abody">${A.tab === "titles" ? (A.editing ? editor() : titleList()) : A.tab === "ads" ? adsView() : A.tab === "gifts" ? giftView() : `<div class="card" id="stats"><span class="spin"></span></div>`}</div>`;
-    if (A.tab === "stats") api.stats().then((s) => { const el = $("#stats"); if (el) el.innerHTML = `<h3>Numbers</h3>
-      <div class="kv"><span>People with Premium now</span><span>${s.premium}</span></div><div class="kv"><span>Accounts</span><span>${s.users}</span></div>
-      <div class="kv"><span>Titles</span><span>${s.titles}</span></div><div class="kv"><span>Payments</span><span>${esc(s.billing)}</span></div><div class="kv"><span>Video</span><span>${esc(s.video)}</span></div>`; }).catch((e) => { const el = $("#stats"); if (el) el.textContent = e.message; });
+    if (A.tab === "stats") api.stats().then((x) => { const el = $("#stats"); if (el) el.innerHTML = statsHtml(x); }).catch((e) => { const el = $("#stats"); if (el) el.textContent = e.message; });
+  }
+
+  // Viewing numbers: last 7 days, top titles and the latest playback problems.
+  function statsHtml(x) {
+    const n = (v) => Number(v || 0);
+    const days = (x.days || []).slice().reverse();
+    const sum = (k) => days.reduce((a, d) => a + n(d[k]), 0);
+    const pct = (a, b) => (b ? Math.round((a / b) * 100) + "%" : "–");
+    const name = (id) => A.titles.find((t) => t.id === id)?.title || id;
+    return `<h3>Right now</h3>
+      <div class="kv"><span>People with Premium</span><span>${n(x.premium)}</span></div><div class="kv"><span>Accounts</span><span>${n(x.users)}</span></div>
+      <div class="kv"><span>Titles</span><span>${n(x.titles)}</span></div><div class="kv"><span>Payments · video</span><span>${esc(x.billing)} · ${esc(x.video)}</span></div>
+      <h3>Last 7 days</h3>
+      <div class="kv"><span>Videos started</span><span>${sum("start")}</span></div>
+      <div class="kv"><span>Playback errors</span><span>${sum("error")} (${pct(sum("error"), sum("start") + sum("error"))} of attempts)</span></div>
+      <div class="kv"><span>Watched to the end (90%+)</span><span>${sum("complete")} (${pct(sum("complete"), sum("start"))} of starts)</span></div>
+      <div class="kv"><span>Teasers played</span><span>${sum("teaser")}</span></div>
+      <div class="kv"><span>New accounts → new Premium</span><span>${sum("signup")} → ${sum("newPremium")} (${pct(sum("newPremium"), sum("signup"))})</span></div>
+      <div class="tbl"><table class="atable"><thead><tr><th>Day</th><th>Starts</th><th>Errors</th><th>Completed</th><th>Teasers</th><th>Sign-ups</th><th>New Premium</th><th>Reports</th></tr></thead><tbody>
+        ${days.map((d) => `<tr><td>${esc(d.day)}</td><td>${n(d.start)}</td><td>${n(d.error)}</td><td>${n(d.complete)}</td><td>${n(d.teaser)}</td><td>${n(d.signup)}</td><td>${n(d.newPremium)}</td><td>${n(d.report)}</td></tr>`).join("")}
+      </tbody></table></div>
+      <h3>Most started titles</h3>
+      ${(x.top || []).length ? `<div class="tbl"><table class="atable"><thead><tr><th>Title</th><th>Starts</th><th>Completed</th><th>Errors</th></tr></thead><tbody>${x.top.map((t) => `<tr><td>${esc(name(t.id))}</td><td>${n(t.start)}</td><td>${n(t.complete)}</td><td>${n(t.error)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="small">No plays yet.</p>`}
+      <h3>Latest playback problems</h3>
+      ${(x.problems || []).length ? `<div class="tbl"><table class="atable"><thead><tr><th>When</th><th>Title</th><th>What</th><th>Device</th></tr></thead><tbody>${x.problems.map((p) => `<tr><td>${esc(new Date(p.at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }))}</td><td>${esc(name(p.titleId) || p.title)}${p.type === "report" ? " · reported" : ""}</td><td>${esc(p.message || p.code)}${p.message && p.code ? ` <span class="small">(${esc(p.code)})</span>` : ""}</td><td class="small">${esc((p.ua || "").replace(/^Mozilla\/5.0 /, "").slice(0, 70))}</td></tr>`).join("")}</tbody></table></div>` : `<p class="small">None reported.</p>`}`;
   }
 
   function titleList() {
@@ -42,19 +66,27 @@ export async function mountAdmin(root, { api, reload }) {
             <label class="f">Age rating<select id="f_rating" data-nav>${opt(RATINGS, t.rating || "U/A 13+")}</select></label></div>
           <label class="f">Content descriptor (shown before playing)<input id="f_descriptor" maxlength="120" placeholder="e.g. Mild violence, strong language" value="${esc(t.descriptor || "")}" data-nav></label>
           <label class="f">Genre<input id="f_genre" maxlength="60" placeholder="e.g. Romance · Thriller" value="${esc(t.genre || "")}" data-nav></label>
-          <label class="f">Story in one or two lines<textarea id="f_desc" rows="3" maxlength="400" data-nav>${esc(t.desc || "")}</textarea></label>
+          <label class="f">Tagline or one-line story (shown on cards and the banner)<textarea id="f_desc" rows="2" maxlength="200" data-nav>${esc(t.desc || "")}</textarea></label>
+          <label class="f">Synopsis (the full story on the title page, 3–6 sentences)<textarea id="f_synopsis" rows="5" maxlength="1500" data-nav>${esc(t.synopsis || "")}</textarea></label>
+          <div class="two"><label class="f">Director<input id="f_director" maxlength="100" value="${esc(t.director || "")}" data-nav></label>
+            <label class="f">Release date (leave empty if not confirmed)<input id="f_release" type="date" value="${esc(t.releaseDate || "")}" data-nav></label></div>
+          <div class="two"><label class="f">Audio languages<input id="f_audio" maxlength="100" placeholder="e.g. Hindi" value="${esc(t.audio || "")}" data-nav></label>
+            <label class="f">Subtitles<input id="f_subs" maxlength="100" placeholder="e.g. English, Hindi" value="${esc(t.subtitles || "")}" data-nav></label></div>
           <div class="two"><label class="f">Cast (commas between names)<input id="f_cast" maxlength="300" value="${esc((t.cast || []).join(", "))}" data-nav></label>
             <label class="f">Year<input id="f_year" inputmode="numeric" maxlength="4" value="${esc(t.year || "")}" data-nav></label></div>
         </div>
         <div class="col">
           <div class="pprev ${t.format === "v" ? "v" : ""}" id="pprev" style="${posterStyle(t)}">${t.poster ? "" : `<div class="pt">${esc(t.title || "Poster")}</div>`}</div>
-          <label class="f">Poster image (${t.format === "v" ? "9:16" : "2:3 or 16:9"})<input type="file" id="f_poster" accept="image/*" data-nav></label>
+          <label class="f">Poster image (${t.format === "v" ? "9:16" : "2:3 portrait"})<input type="file" id="f_poster" accept="image/*" data-nav></label>
+          <label class="f">Banner image for the top of Home (16:9 wide, no text near the left side)${t.banner ? " · uploaded" : ""}<input type="file" id="f_banner" accept="image/*" data-nav></label>
           <label class="check"><input type="checkbox" id="f_premium" ${t.premium !== false ? "checked" : ""} data-nav> In the ₹99 Premium plan</label>
           <label class="f">Free episodes for free users (blank = default: short dramas 3, series 1, movies 0)<input id="f_freeEps" inputmode="numeric" maxlength="2" value="${t.freeEps ?? ""}" data-nav></label>
           <label class="check"><input type="checkbox" id="f_original" ${t.original ? "checked" : ""} data-nav> Lifeofline Original</label>
           <label class="f">Order on the home screen (lower shows first)<input id="f_order" inputmode="numeric" value="${t.order ?? ""}" data-nav></label>
           <label class="check"><input type="checkbox" id="f_published" ${t.published ? "checked" : ""} data-nav> Published (visible in the app)</label>
           <label class="check"><input type="checkbox" id="f_soon" ${t.comingSoon ? "checked" : ""} data-nav> Coming soon (shows the poster; can't be played yet)</label>
+          <label class="check"><input type="checkbox" id="f_concept" ${t.concept ? "checked" : ""} data-nav> Concept showcase (fictional film, not scheduled; poster teaser only)</label>
+          <p class="small">Test uploads: untick “Published” so only admins see them.</p>
           <div class="upl"><b>Trailer</b> <span class="small">${t.trailerUid ? "Uploaded" : "None"} · always free</span><input type="file" id="f_trailer" accept="video/*" data-nav><div class="bar" id="trbar" hidden><i></i></div></div>
         </div>
       </div>
@@ -109,7 +141,7 @@ export async function mountAdmin(root, { api, reload }) {
   window.addEventListener("beforeunload", guardLeave);
 
   async function openTitle(id) {
-    A.editing = id ? { ...(await api.title(id)) } : { kind: "short", format: "v", premium: true, published: false, hue: hues(Date.now()) };
+    A.editing = id ? { ...withStarter(await api.title(id)) } : { kind: "short", format: "v", premium: true, published: false, hue: hues(Date.now()) };
     A.eps = id ? await api.episodes(id) : [];
     render(); window.scrollTo(0, 0);
   }
@@ -122,7 +154,8 @@ export async function mountAdmin(root, { api, reload }) {
       ...(t.id ? { id: t.id } : {}), title: v("title"), kind: v("kind"), format: v("format"), lang: v("lang"), rating: v("rating"),
       descriptor: v("descriptor"), genre: v("genre"), desc: v("desc"), cast: v("cast").split(",").map((s) => s.trim()).filter(Boolean).slice(0, 20),
       year: v("year"), premium: $("#f_premium").checked, original: $("#f_original").checked, published: $("#f_published").checked,
-      comingSoon: $("#f_soon").checked,
+      comingSoon: $("#f_soon").checked, concept: $("#f_concept").checked,
+      synopsis: v("synopsis"), director: v("director"), releaseDate: v("release"), audio: v("audio"), subtitles: v("subs"), banner: t.banner || "",
       freeEps: num(v("freeEps")), order: num(v("order")) ?? 99, poster: t.poster || "", trailerUid: t.trailerUid || "", hue: t.hue || hues(v("title")),
     };
   }
@@ -179,6 +212,10 @@ export async function mountAdmin(root, { api, reload }) {
   });
 
   root.addEventListener("change", async (e) => {
+    if (e.target.id === "f_banner" && e.target.files[0]) {
+      try { toast("Uploading banner…"); A.editing.banner = await api.uploadImage(e.target.files[0], { wide: true }); toast("Banner ready. Save to keep it."); }
+      catch (er) { toast(er.message, 4000); }
+    }
     if (e.target.id === "f_poster" && e.target.files[0]) {
       try { toast("Uploading poster…"); A.editing.poster = await api.uploadImage(e.target.files[0]); const p = $("#pprev"); p.setAttribute("style", posterStyle(A.editing)); p.innerHTML = ""; toast("Poster ready. Save to keep it."); }
       catch (er) { toast(er.message, 4000); }
