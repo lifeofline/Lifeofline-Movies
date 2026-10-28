@@ -50,10 +50,11 @@ async function start(P, epId, trailer, startAt) {
   P.phase = "load"; P.midDone = false;
   layer(P, `<div class="pcard"><span class="spin" aria-label="Loading"></span></div>`);
   let r;
-  try { r = await P.api.play(P.title.id, epId, trailer); }
+  // A teaser stored with the site (a plain MP4) plays straight away; everything else asks the server for a signed link.
+  try { r = trailer && P.direct ? { hls: P.direct, ads: false, premium: false, rating: P.title.rating || "U", test: false } : await P.api.play(P.title.id, epId, trailer); }
   catch (e) {
     if (P.destroyed) return;
-    if (e.needPlan) return layer(P, `<div class="pcard"><span class="eyebrow">Premium</span><h3>${esc(e.message)}</h3><p>Unlock every movie, series and short drama with no ads.</p><div class="row"><button class="btn gold" data-pplan>See the ₹99 plan</button>${P.title.trailerUid ? `<button class="btn ghost" data-ptrailer>Watch trailer</button>` : ""}</div></div>`);
+    if (e.needPlan) return layer(P, `<div class="pcard"><span class="eyebrow">Premium</span><h3>${esc(e.message)}</h3><p>Unlock every movie, series and short drama with no ads.</p><div class="row"><button class="btn gold" data-pplan>See the ₹99 plan</button>${P.title.trailerUid || P.direct ? `<button class="btn ghost" data-ptrailer>Watch ${P.direct ? "teaser" : "trailer"}</button>` : ""}</div></div>`);
     if (e.needSignIn) return layer(P, `<div class="pcard"><h3>${esc(e.message)}</h3><button class="btn gold" data-psignin>Sign in</button></div>`);
     if (e.needAge) return layer(P, `<div class="pcard"><span class="eyebrow">Rated A · 18+</span><h3>${esc(e.message)}</h3><button class="btn gold" data-page>Add date of birth</button></div>`);
     return layer(P, `<div class="pcard"><h3>${esc(e.message)}</h3><button class="btn ghost" data-pretry>Try again</button></div>`);
@@ -61,7 +62,7 @@ async function start(P, epId, trailer, startAt) {
   if (P.destroyed) return;
   P.res = r; P.trailer = !!trailer;
   P.ep = trailer ? null : (P.episodes || []).find((x) => x.id === r.epId) || { id: r.epId, n: r.n, name: r.name };
-  $("#pname", P.ov).textContent = trailer ? `${P.title.title} · Trailer` : P.title.kind === "movie" ? P.title.title : `${P.title.title} · Ep ${r.n}`;
+  $("#pname", P.ov).textContent = trailer ? `${P.title.title} · ${P.direct ? "Teaser" : "Trailer"}` : P.title.kind === "movie" ? P.title.title : `${P.title.title} · Ep ${r.n}`;
   const nx = nextEp(P); $("#pnext", P.ov).hidden = !nx;
   if (r.poster) P.video.poster = r.poster;
 
@@ -90,7 +91,7 @@ async function attach(P, src) {
   const v = P.video;
   if (P.hls) { P.hls.destroy(); P.hls = null; }
   const q = $("#pq", P.ov); q.innerHTML = `<option value="-1">Auto</option>`; q.hidden = true;
-  if (v.canPlayType("application/vnd.apple.mpegurl")) { v.src = src; return; }
+  if (/\.mp4(\?|$)/i.test(src) || v.canPlayType("application/vnd.apple.mpegurl")) { v.src = src; return; }
   await loadScript(HLS_JS);
   if (!window.Hls?.isSupported()) { v.src = src; return; }
   const hls = P.hls = new window.Hls({ capLevelToPlayerSize: true, maxBufferLength: 30 });

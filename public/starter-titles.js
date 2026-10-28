@@ -5,6 +5,7 @@ const t = (n, id, title, tagline, genre, rating, lang = "Hindi") => ({
   id: "lol-" + id, title, desc: tagline, genre, rating, lang,
   kind: "movie", format: "h", premium: true, original: true, published: true, comingSoon: true,
   poster: `posters/${String(n).padStart(2, "0")}-${id}.jpg`, order: 100 + n,
+  teaser: `teasers/${String(n).padStart(2, "0")}-${id}.mp4`, // 5-second silent animated poster (720×900)
 });
 
 export const STARTER_TITLES = [
@@ -29,3 +30,10 @@ export const STARTER_TITLES = [
   t(19, "chhoti-si-duniya", "Chhoti Si Duniya", "Bada hone ke bahut raaste hain.", "Drama · Slice of life · Family", "U"),
   t(20, "shehar-ke-raaz", "Shehar Ke Raaz", "Har shehar ki ek andaruni duniya hoti hai.", "Crime · Underworld · Thriller", "U/A 16+"),
 ];
+
+// Titles already saved in Firestore before teasers existed pick up the poster and teaser from here.
+const BY_ID = Object.fromEntries(STARTER_TITLES.map((x) => [x.id, x]));
+export const withStarter = (title) => {
+  const st = title && BY_ID[title.id];
+  return st ? { ...title, poster: title.poster || st.poster, teaser: title.teaser || st.teaser } : title;
+};

@@ -2,7 +2,7 @@
 // Hash routes: #home #reels #movies #series #search #t/<titleId> #plans #account #signin #grievance #admin
 import { firebaseConfig, appConfig } from "./config.js";
 import { $, $$, esc, day, dur, posterStyle, isSoon, loadScript, toast, isTV } from "./util.js";
-import { STARTER_TITLES } from "./starter-titles.js";
+import { STARTER_TITLES, withStarter } from "./starter-titles.js";
 import { LANGS, KINDS, KIDS_OK, freeEpisode } from "./access.js";
 import { openPlayer } from "./player.js";
 
@@ -27,7 +27,7 @@ const inLang = (list) => (S.lang === "All" ? list : list.filter((t) => t.lang ==
 
 async function loadCatalogue() {
   const [titles, ads] = await Promise.all([api.titles().catch(() => []), api.ads().catch(() => [])]);
-  S.titles = titles; S.ads = ads;
+  S.titles = titles.map(withStarter); S.ads = ads;
 }
 async function loadMine() {
   if (!S.user) { S.progress = {}; S.list = []; S.premium = false; S.sub = null; S.admin = false; S.profile = null; return; }
@@ -74,6 +74,10 @@ const chips = () => `<div class="chips" role="group" aria-label="Language">${["A
 const empty = (msg, cta = "") => `<div class="empty"><p>${msg}</p>${cta}</div>`;
 
 /* ---------- views ---------- */
+// The 5-second silent animated poster, looping. Still poster instead when the viewer prefers less motion.
+const calm = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+const teaserVideo = (t, cls = "tvid") => calm() ? "" :
+  `<video class="${cls}" src="${esc(t.teaser)}" poster="${esc(t.poster || "")}" muted loop autoplay playsinline preload="metadata" aria-hidden="true"></video>`;
 const GENRE_RAILS = [
   ["Thrillers and crime", /thriller|crime|mystery|heist|underworld/i],
   ["Family and feel-good", /family|comedy|slice of life|friendship/i],
@@ -91,13 +95,13 @@ function vHome() {
   const list = S.list.map(byId).filter(Boolean);
   const L = inLang(all);
   return `<section class="hero">
-      <div class="hart" style="${posterStyle(h, "right center")}"></div><div class="hshade"></div>
+      <div class="hart" style="${posterStyle(h, "right center")}">${h.teaser ? teaserVideo(h, "hvid") : ""}</div><div class="hshade"></div>
       <div class="hcopy">
         <span class="eyebrow">${h.original ? "Lifeofline Original · " : ""}${esc(KINDS[h.kind] || "")}</span>
         <h1>${esc(h.title)}</h1>
         <div class="meta"><span class="rating">${esc(h.rating)}</span><span>${esc(h.genre || "")}</span><span>${esc(h.lang || "")}</span></div>
         <p>${esc(h.desc || "")}</p>
-        <div class="row">${isSoon(h) ? `<span class="badge soon">Coming soon</span><button class="btn gold" data-listtog="${esc(h.id)}" data-nav>${S.list.includes(h.id) ? "✓ In My List" : "＋ My List"}</button>` : `<button class="btn gold" data-play="${esc(h.id)}" data-nav>▶ Play</button>`}<a class="btn ghost" href="#t/${esc(h.id)}" data-nav>Details</a></div>
+        <div class="row">${isSoon(h) ? `<span class="badge soon">Coming soon</span>${h.teaser ? `<button class="btn gold" data-trailer="${esc(h.id)}" data-nav>▶ Teaser</button>` : ""}<button class="btn ghost" data-listtog="${esc(h.id)}" data-nav>${S.list.includes(h.id) ? "✓ In My List" : "＋ My List"}</button>` : `<button class="btn gold" data-play="${esc(h.id)}" data-nav>▶ Play</button>`}<a class="btn ghost" href="#t/${esc(h.id)}" data-nav>Details</a></div>
       </div>
       ${pool.length > 1 ? `<div class="dots">${pool.map((_, i) => `<button aria-label="Featured ${i + 1}" class="${i === S.heroI % pool.length ? "on" : ""}" data-hero="${i}"></button>`).join("")}</div>` : ""}
     </section>
@@ -147,7 +151,7 @@ function vSearch(q = "") {
 }
 
 async function vTitle(id) {
-  const t = byId(id) || (await api.title(id).catch(() => null));
+  const t = withStarter(byId(id) || (await api.title(id).catch(() => null)));
   if (!t) return empty("This title isn't available.", `<a class="btn ghost" href="#home">Go home</a>`);
   if (S.kids?.on && !KIDS_OK.has(t.rating)) return empty(`This title is rated ${esc(t.rating)}. Leave Kids mode to watch it.`, `<a class="btn ghost" href="#account">Account</a>`);
   const eps = await api.episodes(id).catch(() => []);
@@ -157,10 +161,10 @@ async function vTitle(id) {
   const locked = (e) => !S.premium && !freeEpisode(t, e);
   const soon = isSoon(t) && !(S.admin && first); // admins can still test a coming-soon title once a video is uploaded
   const note = soon ? "Not out yet. Add it to My List and you'll find it there on release." : !S.premium && t.premium ? (t.kind === "short" ? `Episodes 1–${t.freeEps ?? 3} are free with ads. The rest are in the ₹${PRICE} plan.`
-    : t.kind === "series" ? `Episode 1 is free with ads. The rest are in the ₹${PRICE} plan.` : `This movie is in the ₹${PRICE} plan.${t.trailerUid ? " The trailer is free." : ""}`) : "";
+    : t.kind === "series" ? `Episode 1 is free with ads. The rest are in the ₹${PRICE} plan.` : `This movie is in the ₹${PRICE} plan.${t.trailerUid ? " The trailer is free." : t.teaser ? " The teaser is free." : ""}`) : "";
   const runtime = t.kind === "movie" ? dur(eps[0]?.duration) : `${eps.length} episode${eps.length === 1 ? "" : "s"}`;
   return `<div class="detail ${t.format === "v" ? "v" : ""}">
-    <div class="dposter" style="${posterStyle(t)}">${t.poster ? "" : `<div class="pt">${esc(t.title)}</div>`}</div>
+    <div class="dposter" style="${posterStyle(t)}">${t.teaser ? teaserVideo(t) : t.poster ? "" : `<div class="pt">${esc(t.title)}</div>`}</div>
     <div class="dbody">
       <span class="eyebrow">${t.original ? "Lifeofline Original · " : ""}${esc(KINDS[t.kind] || "")}${t.format === "v" ? " · vertical" : ""}</span>
       <h1>${esc(t.title)}</h1>
@@ -170,7 +174,7 @@ async function vTitle(id) {
       ${t.cast?.length ? `<p class="small">Cast: ${esc(t.cast.join(", "))}</p>` : ""}
       <div class="row">
         ${soon ? `<span class="badge soon">Coming soon</span>` : first ? `<button class="btn gold" data-play="${esc(t.id)}" data-ep="${esc(first.id)}" data-nav>▶ ${p ? (t.kind === "movie" ? "Resume" : `Continue ep ${first.n}`) : t.kind === "movie" ? "Play" : "Play episode 1"}</button>` : `<span class="small">Coming soon</span>`}
-        ${t.trailerUid ? `<button class="btn ghost" data-trailer="${esc(t.id)}" data-nav>Trailer</button>` : ""}
+        ${t.trailerUid || t.teaser ? `<button class="btn ${soon ? "gold" : "ghost"}" data-trailer="${esc(t.id)}" data-nav>▶ ${t.trailerUid ? "Trailer" : "Teaser"}</button>` : ""}
         <button class="btn ghost" data-listtog="${esc(t.id)}" data-nav>${S.list.includes(t.id) ? "✓ In My List" : "＋ My List"}</button>
         <button class="btn ghost" data-share="${esc(t.id)}" data-nav>Share</button>
       </div>
@@ -288,7 +292,7 @@ window.addEventListener("hashchange", () => { if (history.state?.player) return;
 
 /* ---------- actions ---------- */
 async function play(titleId, epId, trailer = false) {
-  const t = byId(titleId) || (await api.title(titleId));
+  const t = withStarter(byId(titleId) || (await api.title(titleId)));
   if (!t) return toast("This title isn't available.");
   if (!trailer && isSoon(t) && !S.admin) return toast(`${t.title} is coming soon. Add it to My List to find it on release.`);
   const eps = S.eps?.id === titleId ? S.eps.eps : await api.episodes(titleId).catch(() => []);
@@ -297,7 +301,7 @@ async function play(titleId, epId, trailer = false) {
   if (!epId && !trailer) epId = p?.epId || eps[0]?.id;
   const startAt = !trailer && p && p.epId === epId && p.pos < (p.dur || 0) - 30 ? p.pos : 0;
   openPlayer({
-    api, title: t, episodes: eps, epId, trailer, startAt, ads: S.ads,
+    api, title: t, episodes: eps, epId, trailer, startAt, ads: S.ads, direct: !t.trailerUid && t.teaser ? t.teaser : "",
     onNeedPlan: () => { location.hash = "#plans"; },
     onNeedSignIn: () => { S.after = location.hash || "#home"; location.hash = "#signin"; },
     onNeedAge: () => { location.hash = "#account"; },
