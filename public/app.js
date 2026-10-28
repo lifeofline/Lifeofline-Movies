@@ -3,6 +3,7 @@
 import { firebaseConfig, appConfig } from "./config.js";
 import { $, $$, esc, day, dur, posterStyle, isSoon, loadScript, toast, isTV } from "./util.js";
 import { STARTER_TITLES, withStarter } from "./starter-titles.js";
+import { DEMO_SERIES, isDemo, demoEpisodes } from "./demo-series.js";
 import { LANGS, KINDS, KIDS_OK, freeEpisode } from "./access.js";
 import { openPlayer } from "./player.js";
 
@@ -27,8 +28,12 @@ const inLang = (list) => (S.lang === "All" ? list : list.filter((t) => t.lang ==
 
 async function loadCatalogue() {
   const [titles, ads] = await Promise.all([api.titles().catch(() => []), api.ads().catch(() => [])]);
-  S.titles = titles.map(withStarter); S.ads = ads;
+  // The demo series ship with the site; a Firestore title with the same id (edited in Admin) wins.
+  const have = new Set(titles.map((t) => t.id));
+  S.titles = [...titles.map(withStarter), ...DEMO_SERIES.filter((d) => !have.has(d.id))]; S.ads = ads;
 }
+// Demo series carry their own episodes; everything else asks the server.
+const episodesOf = (id) => (demoEpisodes(id) ? Promise.resolve(demoEpisodes(id)) : api.episodes(id).catch(() => []));
 async function loadMine() {
   if (!S.user) { S.progress = {}; S.list = []; S.premium = false; S.sub = null; S.admin = false; S.profile = null; return; }
   const [progress, list, st, admin, profile] = await Promise.all([
@@ -71,6 +76,7 @@ function freeCount(t) {
 const freeNow = (t) => avail(t) && freeCount(t) > 0;
 function eyebrow(t) {
   if (isConcept(t)) return "Concept showcase · Fictional film";
+  if (isDemo(t)) return `Demo series · Season ${t.season || 1} · Fictional story cards`;
   const parts = [t.original ? "Lifeofline Original" : "", KINDS[t.kind] || ""];
   if (isSoon(t)) parts.push(relDate(t) ? `Releasing ${relDate(t)}` : "Coming soon");
   return parts.filter(Boolean).join(" · ");
@@ -78,6 +84,7 @@ function eyebrow(t) {
 // The one accurate main action for this viewer.
 function mainAction(t) {
   if (isConcept(t) || isSoon(t)) return t.teaser || t.trailerUid ? `<button class="btn gold" data-trailer="${esc(t.id)}" data-nav>▶ ${t.trailerUid ? "Watch trailer" : "Watch poster teaser"}</button>` : "";
+  if (isDemo(t)) return `<button class="btn gold" data-play="${esc(t.id)}" data-nav>▶ Play demo episode 1</button>`;
   if (S.premium) return `<button class="btn gold" data-play="${esc(t.id)}" data-nav>▶ Play</button>`;
   if (!t.premium) return `<button class="btn gold" data-play="${esc(t.id)}" data-nav>▶ Watch free</button>`;
   if (freeCount(t) > 0) return `<button class="btn gold" data-play="${esc(t.id)}" data-nav>▶ Watch episode 1 free</button>`;
@@ -86,13 +93,14 @@ function mainAction(t) {
 function tile(t, shape = "tall") {
   const p = S.progress[t.id];
   const tag = isConcept(t) ? `<span class="tag concept">Concept</span>`
+    : isDemo(t) ? `<span class="tag demo">Demo</span>`
     : isSoon(t) ? `<span class="tag soon">${relDate(t) ? esc(relDate(t)) : "Coming soon"}</span>`
     : !t.premium ? `<span class="tag">Free</span>` : freeCount(t) > 0 && !S.premium ? `<span class="tag">Ep 1 free</span>` : `<span class="tag prem">Premium</span>`;
   const pct = p?.dur ? Math.min(100, (p.pos / p.dur) * 100) : 0;
   return `<a class="tile" href="#t/${esc(t.id)}" data-nav aria-label="${esc(t.title)}"${t.teaser ? ` data-teaser="${esc(t.teaser)}"` : ""}>
     <div class="poster ${shape}" style="${posterStyle(t)}">${tag}${t.format === "v" ? '<span class="tag r">9:16</span>' : ""}${t.poster ? "" : `<div class="pt">${esc(t.title)}</div>`}</div>
     ${p ? `<div class="prog"><i style="width:${pct}%"></i></div>` : ""}
-    <div class="cap">${t.poster ? `<b>${esc(t.title)}</b>` : ""}<span>${isConcept(t) ? "Concept" : esc(KINDS[t.kind] || "")} · ${esc(t.lang || "")}</span></div></a>`;
+    <div class="cap">${t.poster ? `<b>${esc(t.title)}</b>` : ""}<span>${isConcept(t) ? "Concept" : isDemo(t) ? "Demo series · 3 short episodes" : `${esc(KINDS[t.kind] || "")} · ${esc(t.lang || "")}`}</span></div></a>`;
 }
 function rail(title, items, { shape = "tall", sub = "", more = "" } = {}) {
   if (!items.length) return "";
@@ -127,8 +135,10 @@ const GENRE_RAILS = [
 function vHome() {
   const all = visible();
   if (!all.length) return empty(S.ready ? (S.admin ? "No titles published yet. Add the first one in Admin." : "New titles are on the way. Check back soon.") : `<span class="spin"></span>`, S.admin ? `<a class="btn gold" href="#admin">Open Admin</a>` : "");
-  const ready = all.filter(avail);
+  // Demo series play, but they are kept out of the banner, Top 10, "free now" and the counts so they never pass for releases.
+  const ready = all.filter((t) => avail(t) && !isDemo(t));
   const R = inLang(ready);
+  const demos = inLang(all.filter(isDemo));
   const upcoming = inLang(all.filter((t) => isSoon(t) && !isConcept(t)));
   const concepts = inLang(all.filter(isConcept));
   // Banner: only titles people can watch now. With nothing playable yet, the concept films, clearly labelled.
@@ -153,7 +163,8 @@ function vHome() {
     ${many ? GENRE_RAILS.map(([name, re]) => row(name, R.filter((t) => re.test(t.genre || "")))).join("") : ""}
     ${many ? LANGS.map((l) => row(`In ${l}`, ready.filter((t) => t.lang === l))).join("") : ""}
     ${rail("My List", list, { shape: "tall" })}
-    ${R.length ? "" : `<div class="note-strip"><b>New films and series are being added.</b> Until then, watch the teasers in our concept showcase below.</div>`}
+    ${R.length ? "" : `<div class="note-strip"><b>New films and series are being added.</b> Until then, try the demo series and the teasers in our concept showcase below.</div>`}
+    ${rail("Demo series", demos, { sub: "Fictional animated story cards · 3 silent 5-second episodes each · free, no ads" })}
     ${rail("Coming soon", upcoming, { sub: "Release dates where confirmed" })}
     ${rail("Concept showcase", concepts, { sub: "Fictional films in development · animated poster teasers, not film footage" })}
     ${S.premium || S.kids?.on ? "" : planStrip(ready)}`;
@@ -233,11 +244,14 @@ function mountHero() {
 function vGrid(kind) {
   const base = inLang(visible().filter((t) => (kind === "movies" ? t.kind === "movie" : t.kind !== "movie")));
   const f = S.avail || "all";
-  const items = base.filter((t) => f === "now" ? avail(t) : f === "soon" ? !avail(t) : true).sort((a, b) => avail(b) - avail(a));
-  const nNow = base.filter(avail).length, nSoon = base.length - nNow;
-  const label = { all: "All", now: `Available now (${nNow})`, soon: `Coming soon and concepts (${nSoon})` };
+  const real = (t) => avail(t) && !isDemo(t);
+  const rank = (t) => (real(t) ? 0 : isDemo(t) ? 1 : 2);
+  const items = base.filter((t) => f === "now" ? real(t) : f === "demo" ? isDemo(t) : f === "soon" ? !avail(t) : true).sort((a, b) => rank(a) - rank(b));
+  const nNow = base.filter(real).length, nDemo = base.filter(isDemo).length, nSoon = base.filter((t) => !avail(t)).length;
+  const label = { all: "All", now: `Available now (${nNow})`, demo: `Demo series (${nDemo})`, soon: `Coming soon and concepts (${nSoon})` };
+  const keys = ["all", "now", ...(nDemo ? ["demo"] : []), "soon"];
   return `<div class="ptitle"><h1>${kind === "movies" ? "Movies" : "Series and short dramas"}</h1><span>${items.length} title${items.length === 1 ? "" : "s"}</span></div>
-    <div class="chips" role="group" aria-label="Availability">${["all", "now", "soon"].map((k) => `<button class="chip ${f === k ? "on" : ""}" data-avail="${k}" data-nav>${label[k]}</button>`).join("")}</div>
+    <div class="chips" role="group" aria-label="Availability">${keys.map((k) => `<button class="chip ${f === k ? "on" : ""}" data-avail="${k}" data-nav>${label[k]}</button>`).join("")}</div>
     ${chips()}
     <div class="grid">${items.map((t) => tile(t, "tall")).join("")}</div>${items.length ? "" : empty(f === "now" ? "Nothing available here yet." : "Nothing here yet.")}`;
 }
@@ -270,9 +284,10 @@ async function vTitle(id) {
   const t = withStarter(byId(id) || (await api.title(id).catch(() => null)));
   if (!t) return empty("This title isn't available.", `<a class="btn ghost" href="#home">Go home</a>`);
   if (S.kids?.on && !KIDS_OK.has(t.rating)) return empty(`This title is rated ${esc(t.rating)}. Leave Kids mode to watch it.`, `<a class="btn ghost" href="#account">Account</a>`);
-  const eps = await api.episodes(id).catch(() => []);
+  const eps = await episodesOf(id);
   S.eps = { id, eps };
   const p = S.progress[id];
+  const demo = isDemo(t);
   const first = p ? eps.find((e) => e.id === p.epId) || eps[0] : eps[0];
   const locked = (e) => !S.premium && !freeEpisode(t, e);
   const concept = isConcept(t);
@@ -283,6 +298,7 @@ async function vTitle(id) {
   const what = t.kind === "movie" ? "movie" : "episodes";
   let access;
   if (concept) access = "Concept showcase · not scheduled for release";
+  else if (demo) access = `Demo series · ${eps.length} short silent episodes · free to watch, no ads`;
   else if (soon) access = relDate(t) ? `Coming soon · releasing ${relDate(t)}` : "Coming soon · release date to be announced";
   else if (!t.premium) access = "Available now · free with ads";
   else if (S.premium) access = "Available now · included in your Premium plan";
@@ -291,9 +307,10 @@ async function vTitle(id) {
   else access = `Available now · ${run ? (free.length === 1 ? "episode 1" : `episodes 1–${free.length}`) : `${free.length} of ${eps.length} episodes`} free with ads, the rest in the ₹${PRICE} plan`;
   const locks = !S.premium && t.premium && free.length < eps.length;
   const note = concept ? "This is a concept for a fictional film in development. The video is an animated poster teaser, not footage from a film."
+    : demo ? "This is a fictional demo series. Each episode is a 5-second animated story card with on-screen text: not filmed, no actors, no dialogue."
     : soon ? "Not out yet. Add it to My List and you'll find it there on release."
     : locks ? `Get Premium for ₹${PRICE} a month to watch ${t.kind === "movie" ? "this movie" : free.length ? "the rest" : "all episodes"} without ads.` : "";
-  const runtime = t.kind === "movie" ? dur(eps[0]?.duration) : eps.length ? `${eps.length} episode${eps.length === 1 ? "" : "s"}` : "";
+  const runtime = t.kind === "movie" ? dur(eps[0]?.duration) : eps.length ? `${demo ? `Season ${t.season || 1} · ` : ""}${eps.length} episode${eps.length === 1 ? "" : "s"}` : "";
   const words = (x) => new Set(String(x.genre || "").toLowerCase().split(/[^a-z-]+/).filter((w) => w.length > 2));
   const mine = words(t);
   const like = visible().filter((x) => x.id !== t.id).map((x) => [x, [...words(x)].filter((w) => mine.has(w)).length + (x.lang === t.lang ? 0.5 : 0) + (avail(x) ? 1 : 0)])
@@ -308,7 +325,7 @@ async function vTitle(id) {
     ["Genre", t.genre || ""],
     ["Age rating", `${t.rating || "U"}${t.descriptor ? ` · ${t.descriptor}` : ""}`],
   ].filter(([, v]) => v);
-  const playLabel = p ? (t.kind === "movie" ? "Resume" : `Continue ep ${first?.n}`) : S.premium || !t.premium ? (t.kind === "movie" ? "Play" : "Play episode 1") : free.length ? (t.kind === "movie" ? "Watch free" : "Watch episode 1 free") : "";
+  const playLabel = p ? (t.kind === "movie" ? "Resume" : `Continue ep ${first?.n}`) : demo ? "Play episode 1" : S.premium || !t.premium ? (t.kind === "movie" ? "Play" : "Play episode 1") : free.length ? (t.kind === "movie" ? "Watch free" : "Watch episode 1 free") : "";
   return `<div class="dback" style="${t.poster ? `background-image:url('${String(t.poster).replace(/'/g, "%27")}')` : posterStyle(t)}" aria-hidden="true"></div>
   <div class="detail ${t.format === "v" ? "v" : ""}">
     <div class="dposter" style="${posterStyle(t)}">${t.teaser ? teaserVideo(t) : t.poster ? "" : `<div class="pt">${esc(t.title)}</div>`}${concept && t.teaser ? `<span class="artlbl">Animated poster teaser</span>` : ""}</div>
@@ -332,9 +349,9 @@ async function vTitle(id) {
         const done = ep && ep.dur && ep.pos / ep.dur > 0.9;
         return `<button class="ep" data-play="${esc(t.id)}" data-ep="${esc(e.id)}" data-nav>
           <span class="n">${String(e.n).padStart(2, "0")}</span>
-          <span class="thumb" style="${posterStyle(t)}"></span>
-          <span class="info"><b>${esc(e.name || "Episode " + e.n)}</b><span>${esc(dur(e.duration))}${done ? " · watched" : ep ? " · watching" : ""}</span></span>
-          ${locked(e) ? `<span class="lock">₹${PRICE} plan</span>` : !S.premium ? `<span class="free">Free · ads</span>` : ""}</button>`;
+          <span class="thumb" style="${e.thumb ? `background:#000 url('${String(e.thumb).replace(/'/g, "%27")}') center/cover` : posterStyle(t)}"></span>
+          <span class="info"><b>${esc(e.name || "Episode " + e.n)}</b>${e.desc ? `<em>${esc(e.desc)}</em>` : ""}<span>${esc(dur(e.duration))}${done ? " · watched" : ep ? " · watching" : ""}</span></span>
+          ${demo ? `<span class="free">Demo</span>` : locked(e) ? `<span class="lock">₹${PRICE} plan</span>` : !S.premium ? `<span class="free">Free · ads</span>` : ""}</button>`;
       }).join("")}</div>` : ""}
     </div></div>
     ${like.length ? `<section class="rail"><div class="rail-h"><h2>More like this</h2></div><div class="grid">${like.map((x) => tile(x, "tall")).join("")}</div></section>` : ""}`;
@@ -505,7 +522,7 @@ async function play(titleId, epId, trailer = false) {
   const t = withStarter(byId(titleId) || (await api.title(titleId)));
   if (!t) return toast("This title isn't available.");
   if (!trailer && isSoon(t) && !S.admin) return toast(`${t.title} is coming soon. Add it to My List to find it on release.`);
-  const eps = S.eps?.id === titleId ? S.eps.eps : await api.episodes(titleId).catch(() => []);
+  const eps = S.eps?.id === titleId ? S.eps.eps : await episodesOf(titleId);
   S.eps = { id: titleId, eps };
   const p = S.progress[titleId];
   if (!epId && !trailer) epId = p?.epId || eps[0]?.id;

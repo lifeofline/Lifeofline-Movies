@@ -65,7 +65,13 @@ async function start(P, epId, trailer, startAt) {
   layer(P, `<div class="pcard"><span class="spin" aria-label="Loading"></span></div>`);
   let r;
   // A teaser stored with the site (a plain MP4) plays straight away; everything else asks the server for a signed link.
-  try { r = trailer && P.direct ? { hls: P.direct, ads: false, premium: false, rating: P.title.rating || "U", test: false } : await P.api.play(P.title.id, epId, trailer); }
+  // Demo series episodes are plain MP4s shipped with the site: no ads, no server call.
+  const local = !trailer && P.title.demo ? (P.episodes || []).find((x) => x.id === epId) || (P.episodes || [])[0] : null;
+  try {
+    r = trailer && P.direct ? { hls: P.direct, ads: false, premium: false, rating: P.title.rating || "U", test: false }
+      : local?.src ? { hls: local.src, epId: local.id, n: local.n, name: local.name, ads: false, premium: false, rating: P.title.rating || "U", test: false }
+      : await P.api.play(P.title.id, epId, trailer);
+  }
   catch (e) {
     if (P.destroyed) return;
     if (e.needPlan) return layer(P, `<div class="pcard"><span class="eyebrow">Premium</span><h3>${esc(e.message)}</h3><p>Unlock every movie, series and short drama with no ads.</p><div class="row"><button class="btn gold" data-pplan>See the ₹99 plan</button>${P.title.trailerUid || P.direct ? `<button class="btn ghost" data-ptrailer>Watch ${P.direct ? "poster teaser" : "trailer"}</button>` : ""}</div></div>`);
@@ -76,7 +82,7 @@ async function start(P, epId, trailer, startAt) {
   if (P.destroyed) return;
   P.res = r; P.trailer = !!trailer;
   P.ep = trailer ? null : (P.episodes || []).find((x) => x.id === r.epId) || { id: r.epId, n: r.n, name: r.name };
-  $("#pname", P.ov).textContent = trailer ? `${P.title.title} · ${P.direct ? "Animated poster teaser" : "Trailer"}` : P.title.kind === "movie" ? P.title.title : `${P.title.title} · Ep ${r.n}`;
+  $("#pname", P.ov).textContent = trailer ? `${P.title.title} · ${P.direct ? "Animated poster teaser" : "Trailer"}` : P.title.kind === "movie" ? P.title.title : `${P.title.title} · Ep ${r.n}${P.title.demo ? " · Demo story card" : ""}`;
   const nx = nextEp(P); $("#pnext", P.ov).hidden = !nx;
   if (r.poster) P.video.poster = r.poster;
 

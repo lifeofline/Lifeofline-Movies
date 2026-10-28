@@ -8,6 +8,7 @@ export const day = (ms) => new Date(ms).toLocaleDateString("en-IN", { day: "nume
 // "2h 8m", "35 min", "2 min"
 export function dur(sec) {
   sec = Math.round(sec || 0); if (!sec) return "";
+  if (sec < 60) return `${sec} sec`;
   const h = Math.floor(sec / 3600), m = Math.round((sec % 3600) / 60);
   return h ? `${h}h ${m}m` : `${Math.max(1, m)} min`;
 }

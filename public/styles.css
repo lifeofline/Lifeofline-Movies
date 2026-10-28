@@ -145,6 +145,7 @@ body.home .top:not(.solid), body.titlepg .top:not(.solid) { background: linear-g
 .tag { position: absolute; top: 8px; left: 8px; font-family: var(--f-mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; padding: 3px 7px; border-radius: 5px; background: rgba(20,15,28,.75); }
 .tag.prem { background: var(--gold); color: var(--gold-ink); }
 .tag.soon { background: var(--rose); color: #fff; }
+.tag.demo { background: #2f6f8f; color: #fff; }
 .badge.soon { background: color-mix(in srgb, var(--rose) 22%, transparent); color: var(--rose); align-self: center; }
 .tag.r { left: auto; right: 8px; }
 .cap { font-size: 13px; color: var(--muted); display: flex; flex-direction: column; min-width: 0; }
@@ -188,6 +189,7 @@ body.titlepg .detail { padding-top: 8px; }
 .ep .info { flex: 1; min-width: 0; }
 .ep .info b { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ep .info span { color: var(--muted); font-size: 13px; }
+.ep .info em { display: block; font-style: normal; color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lock { font-family: var(--f-mono); font-size: 11px; color: var(--gold); white-space: nowrap; }
 .free { font-family: var(--f-mono); font-size: 11px; color: var(--rose); white-space: nowrap; }
 
