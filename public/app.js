@@ -208,7 +208,7 @@ function heroCarousel(pool) {
 }
 
 let heroTimer = 0;
-const HERO_MS = 8000;
+const HERO_MS = 2000; // a new banner every 2 seconds
 function mountHero() {
   clearInterval(heroTimer);
   const hero = $("#hero"); if (!hero) return;
@@ -412,17 +412,18 @@ function vSignin(mode = "in") {
 }
 
 function vAccount() {
-  if (!S.user) return vSignin("in");
   const s = S.sub;
   const planLine = S.premium ? (s?.status === "cancelling" ? `Premium till ${day(s.until)} · won't renew` : s?.mode === "subscription" ? `Premium · ₹${PRICE}/year · renews once a year` : `Premium till ${day(s?.until)}`) : "Free with ads";
   const adult = S.profile?.adult;
   return `<div class="ptitle"><h1>Account</h1>${S.premium ? `<span class="badge prem">Premium</span>` : `<span class="badge free">Free with ads</span>`}</div>
   <div class="cards">
-    <div class="card"><h3>${esc(S.user.name || "You")}</h3><div class="kv"><span>Email</span><span>${esc(S.user.email || "")}</span></div>
+    ${S.user ? `<div class="card"><h3>${esc(S.user.name || "You")}</h3><div class="kv"><span>Email</span><span>${esc(S.user.email || "")}</span></div>
       ${S.user.emailVerified || DEMO ? "" : `<p class="small">Check your inbox to verify your email. <button class="link" data-verify>Send again</button></p>`}
-      <button class="btn ghost" data-signout data-nav>Sign out</button></div>
+      <button class="btn ghost" data-signout data-nav>Sign out</button></div>`
+    : `<div class="card hl"><h3>You're browsing as a guest</h3><p class="small">Everything is open to explore and free titles play right away. A free account saves your place in every title, keeps My List on all your devices, and is needed for Premium.</p>
+      <div class="row"><a class="btn gold" href="#signup" data-nav>Create free account</a><a class="btn ghost" href="#signin" data-nav>Sign in</a></div></div>`}
     <div class="card"><h3>Plan</h3><div class="kv"><span>Current plan</span><span>${esc(planLine)}</span></div>
-      ${S.premium ? (s?.status === "cancelling" ? `<a class="btn gold" href="#plans" data-nav>Renew</a>` : s?.mode === "subscription" || s?.mode === "test" ? `<button class="btn ghost" data-cancel data-nav>Cancel renewal</button>` : `<a class="btn ghost" href="#plans" data-nav>Renew early</a>`) : `<a class="btn gold" href="#plans" data-nav>Get Premium for ₹${PRICE}</a>`}</div>
+      ${S.premium ? (s?.status === "cancelling" ? `<a class="btn gold" href="#plans" data-nav>Renew</a>` : s?.mode === "subscription" || s?.mode === "test" ? `<button class="btn ghost" data-cancel data-nav>Cancel renewal</button>` : `<a class="btn ghost" href="#plans" data-nav>Renew early</a>`) : `<a class="btn gold" href="#plans" data-nav>Get Premium · ₹${PRICE} a year</a>`}</div>
     <div class="card"><h3>Age</h3>
       ${adult == null ? `<p class="small">Add your date of birth to watch titles rated A (18+). It can't be changed later.</p>
         <label class="f">Date of birth<input type="date" id="dob" max="${new Date().toISOString().slice(0, 10)}" data-nav></label><button class="btn ghost" data-dob data-nav>Save</button>`
@@ -433,7 +434,7 @@ function vAccount() {
       <p class="small">Big tiles and remote-control arrows. Turns on by itself on Android TV, Fire TV and smart TVs.</p><button class="btn ghost" data-tvtog data-nav>${S.tv ? "Turn off" : "Turn on"} TV layout</button></div>
     <div class="card"><h3>Help</h3><p class="small">Questions, complaints about a title or a payment problem: we reply within 24 hours and resolve within 15 days.</p>
       <a class="btn ghost" href="#grievance" data-nav>Contact the grievance officer</a>
-      ${S.admin ? `<a class="btn gold" href="#admin" data-nav>Open Admin</a>` : `<button class="link small" data-claim>I'm on the admin list</button>`}</div>
+      ${S.admin ? `<a class="btn gold" href="#admin" data-nav>Open Admin</a>` : S.user ? `<button class="link small" data-claim>I'm on the admin list</button>` : ""}</div>
   </div>`;
 }
 
@@ -532,14 +533,14 @@ async function play(titleId, epId, trailer = false) {
   openPlayer({
     api, title: t, episodes: eps, epId, trailer, startAt, ads: S.ads, direct: !t.trailerUid && t.teaser ? t.teaser : "",
     onNeedPlan: () => { location.hash = "#plans"; },
-    onNeedSignIn: () => { S.after = location.hash || "#home"; location.hash = "#signin"; },
+    onNeedSignIn: () => joinSheet("Create a free account to watch this", "This title is rated A (18+), so we need an account with your date of birth first."),
     onNeedAge: () => { location.hash = "#account"; },
-    onClosed: async () => { if (S.user) { S.progress = await api.getProgress().catch(() => S.progress); S.keepScroll = true; route(); } },
+    onClosed: async () => { if (S.user) { S.progress = await api.getProgress().catch(() => S.progress); S.keepScroll = true; route(); } else if (!trailer) nudgeJoin(); },
   });
 }
 
 async function subscribe(btn) {
-  if (!S.user) { S.after = "#plans"; toast("Sign in or create an account first."); location.hash = "#signup"; return; }
+  if (!S.user) return joinSheet(`Create a free account to get Premium`, `Your ₹${PRICE} yearly plan is linked to your account, so it works on your phone, computer and TV.`, "#plans");
   if (btn) btn.disabled = true;
   try {
     const o = await api.subStart();
@@ -562,6 +563,30 @@ async function subscribe(btn) {
 async function afterPaid() { await loadMine(); toast("You're Premium. Everything is unlocked and ads are off.", 4000); location.hash = "#home"; route(); }
 
 // In-page confirmation (no browser dialogs).
+// Guests can open everything. When they do something that needs an account, this asks them to make one,
+// then brings them back to where they were.
+function joinSheet(title, why, back = location.hash || "#home") {
+  $$(".sheet-ov.join").forEach((x) => x.remove());
+  const ov = document.createElement("div"); ov.className = "sheet-ov join";
+  ov.innerHTML = `<div class="sheet" role="dialog" aria-label="Create an account"><span class="eyebrow">Free account</span><h2>${esc(title)}</h2><p>${esc(why)}</p>
+    <div class="row"><button class="btn gold" data-jgo="#signup">Create free account</button><button class="btn ghost" data-jgo="#signin">Sign in</button></div>
+    <p class="small"><button class="link" data-jno>Not now, keep browsing</button></p></div>`;
+  document.body.append(ov);
+  ov.addEventListener("click", (e) => {
+    const go = e.target.closest("[data-jgo]");
+    if (go) { S.after = back; ov.remove(); location.hash = go.dataset.jgo; return; }
+    if (e.target === ov || e.target.closest("[data-jno]")) ov.remove();
+  });
+  $("[data-jgo]", ov).focus();
+}
+let nudged = false;
+try { nudged = sessionStorage.getItem("lm_nudged") === "1"; } catch { /* private mode */ }
+function nudgeJoin() {
+  if (S.user || nudged) return;
+  nudged = true; try { sessionStorage.setItem("lm_nudged", "1"); } catch { /* private mode */ }
+  joinSheet("Enjoying Lifeofline Movies?", "Create a free account to keep your place in every title, build My List and get new releases first. It takes 30 seconds.");
+}
+
 function confirmSheet(html, okLabel, onOk) {
   const ov = document.createElement("div"); ov.className = "sheet-ov";
   ov.innerHTML = `<div class="sheet" role="dialog">${html}<p class="err" hidden></p><div class="row"><button class="btn gold" data-ok>${esc(okLabel)}</button><button class="btn ghost" data-no>Cancel</button></div></div>`;
@@ -589,7 +614,7 @@ document.addEventListener("click", async (e) => {
       // Update the buttons in place so the banner doesn't jump back to its first slide.
       $$(`[data-listtog="${CSS.escape(el.dataset.listtog)}"]`).forEach((b) => { b.textContent = b.textContent.replace(/^(✓|＋) (In )?My List$/, (m, _s, inn) => `${on ? "✓" : "＋"} ${inn || ""}My List`); });
       if (!location.hash.startsWith("#home") && location.hash !== "" && !location.hash.startsWith("#t/")) { S.keepScroll = true; route(); } }
-    catch (er) { if (er.needSignIn) { S.after = location.hash; location.hash = "#signin"; } toast(er.message); }
+    catch (er) { if (er.needSignIn) return joinSheet("Create a free account to save titles", "My List keeps the titles you want to watch, on every device you sign in on."); toast(er.message); }
     return;
   }
   if (el.dataset.share) {
@@ -601,6 +626,7 @@ document.addEventListener("click", async (e) => {
   if (el.hasAttribute("data-signout")) { await api.signOut(); toast("Signed out"); location.hash = "#home"; return; }
   if (el.hasAttribute("data-cancel")) return confirmSheet(`<h2>Cancel renewal?</h2><p>You keep Premium till ${day(S.sub?.until)}. After that, free titles still play with ads.</p>`, "Cancel renewal", async () => { await api.subCancel(); await loadMine(); toast("Renewal cancelled"); route(); });
   if (el.hasAttribute("data-dob")) {
+    if (!S.user) return joinSheet("Create a free account first", "Your date of birth is saved to your account.");
     const v = $("#dob")?.value; if (!v) return toast("Pick your date of birth.");
     return confirmSheet(`<h2>Save ${esc(new Date(v).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }))}?</h2><p>Your date of birth can't be changed later.</p>`, "Save", async () => { const r = await api.setDob(v); S.profile = { ...(S.profile || {}), adult: r.adult }; toast("Saved"); route(); });
   }
