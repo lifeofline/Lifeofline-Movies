@@ -9,7 +9,7 @@ import { openPlayer } from "./player.js";
 
 const DEMO = String(firebaseConfig.apiKey || "").startsWith("PASTE");
 const api = DEMO ? (await import("./api-demo.js")).createDemoApi() : (await import("./api-firebase.js")).createFirebaseApi(firebaseConfig, appConfig);
-const PRICE = 99;
+const PRICE = 499; // Premium is paid once a year
 
 /* ---------- state ---------- */
 const store = {
@@ -53,7 +53,7 @@ function shell(route) {
   $("#tabbar").innerHTML = TABS.map(([k, l, d]) => `<a href="#${k}" class="${route === k ? "on" : ""}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="${d}"/></svg>${l}</a>`).join("");
   $("#tabbar").hidden = false;
   $("#me").innerHTML = S.premium ? `<a href="#account" class="badge prem" data-nav>Premium</a>`
-    : `<a href="#plans" class="btn gold sm" data-nav>Subscribe ${"₹" + PRICE}</a>`;
+    : `<a href="#plans" class="btn gold sm" data-nav>Subscribe ₹${PRICE}/yr</a>`;
   $("#acct").innerHTML = S.user ? `<a href="#account" class="avatar" data-nav aria-label="Account">${esc((S.user.name || "?").slice(0, 1).toUpperCase())}</a>` : `<a href="#signin" class="btn ghost sm" data-nav>Sign in</a>`;
   $("#demo").hidden = !DEMO;
   document.body.classList.toggle("tv", !!S.tv);
@@ -169,10 +169,10 @@ function vHome() {
     ${rail("Concept showcase", concepts, { sub: "Fictional films in development · animated poster teasers, not film footage" })}
     ${S.premium || S.kids?.on ? "" : planStrip(ready)}`;
 }
-// The ₹99 plan, explained with what is actually available today.
+// The ₹499 yearly plan, explained with what is actually available today.
 function planStrip(ready) {
   const n = ready.length;
-  return `<section class="planbox"><div class="pb-main"><div class="price">₹${PRICE}<small> / month</small></div>
+  return `<section class="planbox"><div class="pb-main"><div class="price">₹${PRICE}<small> / year</small></div>
       <p>${n ? `${n} title${n === 1 ? "" : "s"} available today. Premium unlocks all of them with no ads, in Full HD, on your phone, computer and TV.` : "Premium unlocks every film and series as it's released, with no ads."} Prices include GST. Cancel anytime.</p>
       <a class="btn gold" href="#plans" data-nav>See plan and FAQ</a></div>
     ${faqHtml(ready, 3)}</section>`;
@@ -309,7 +309,7 @@ async function vTitle(id) {
   const note = concept ? "This is a concept for a fictional film in development. The video is an animated poster teaser, not footage from a film."
     : demo ? "This is a fictional demo series. Each episode is a 5-second animated story card with on-screen text: not filmed, no actors, no dialogue."
     : soon ? "Not out yet. Add it to My List and you'll find it there on release."
-    : locks ? `Get Premium for ₹${PRICE} a month to watch ${t.kind === "movie" ? "this movie" : free.length ? "the rest" : "all episodes"} without ads.` : "";
+    : locks ? `Get Premium for ₹${PRICE} a year to watch ${t.kind === "movie" ? "this movie" : free.length ? "the rest" : "all episodes"} without ads.` : "";
   const runtime = t.kind === "movie" ? dur(eps[0]?.duration) : eps.length ? `${demo ? `Season ${t.season || 1} · ` : ""}${eps.length} episode${eps.length === 1 ? "" : "s"}` : "";
   const words = (x) => new Set(String(x.genre || "").toLowerCase().split(/[^a-z-]+/).filter((w) => w.length > 2));
   const mine = words(t);
@@ -361,8 +361,8 @@ async function vTitle(id) {
 function faqHtml(ready, limit = 99) {
   const names = ready.slice(0, 4).map((t) => t.title);
   const renew = S.billing === "subscription"
-    ? `Premium renews every month through UPI Autopay, card or netbanking. Your bank or UPI app notifies you before each ₹${PRICE} charge.`
-    : `Premium is a 30-day pass for ₹${PRICE}. It doesn't renew by itself; we email you 3 days before it ends and you pay again to continue.`;
+    ? `Premium is ₹${PRICE} for a full year, charged once a year through UPI Autopay, card or netbanking. Your bank or UPI app notifies you before each yearly charge.`
+    : `Premium is a 1-year pass for ₹${PRICE}: you pay once and watch for 365 days. It doesn't renew by itself; we email you a week before it ends and you pay again to continue.`;
   const qa = [
     ["What can I watch today?", ready.length ? `${ready.length} title${ready.length === 1 ? " is" : "s are"} available now${names.length ? `, including ${names.join(", ")}` : ""}. New films and series are added regularly; the concept showcase is not available to watch yet.` : "New films and series are being added now. The concept showcase shows films in development; their animated poster teasers are free to watch."],
     ["How do I cancel?", `Open Account → Plan → Cancel renewal. You keep Premium until the end of the period you paid for, and you can also cancel the UPI Autopay mandate in your UPI app.`],
@@ -378,16 +378,16 @@ function faqHtml(ready, limit = 99) {
 
 function vPlans() {
   const s = S.sub, active = S.premium;
-  const ready = visible().filter(avail);
-  return `<div class="ptitle"><div><span class="eyebrow">Plans</span><h1>One price. Everything unlocked.</h1></div></div>
+  const ready = visible().filter((t) => avail(t) && !isDemo(t));
+  return `<div class="ptitle"><div><span class="eyebrow">Plans</span><h1>One payment a year. Everything unlocked.</h1></div></div>
   <div class="plans two">
     <div class="plan"><span class="pk">Always free</span><h3>Free with ads</h3><div class="amt">₹0</div>
       <ul><li>Titles marked Free and some first episodes</li><li>Poster teasers and trailers</li><li>Short ad breaks</li><li>Phone, computer and TV browser</li><li class="no">Premium titles</li></ul>
       <a class="btn ghost" href="#home" data-nav>Keep watching free</a></div>
-    <div class="plan hl"><span class="pk gold">Premium</span><h3>Premium</h3><div class="amt">₹${PRICE}<small> / month</small></div>
-      <ul><li>Every available film, series and short drama${ready.length ? ` (${ready.length} today)` : ""}</li><li>No ads</li><li>Full HD where the video has it</li><li>Phone, computer and TV browser</li><li>Cancel anytime</li></ul>
-      ${active ? `<a class="btn" href="#account" data-nav>Your plan · till ${day(s?.until)}</a>` : `<button class="btn gold" data-subscribe data-nav>Subscribe for ₹${PRICE}</button>`}
-      <p class="small">${S.billing === "subscription" ? "Renews monthly through UPI Autopay, card or netbanking. You get a notice before each charge." : S.billing === "pass" ? "A 30-day pass. We email you before it ends; pay again to renew. It never charges you by itself." : DEMO ? "Demo mode: no money is taken." : "Pay with UPI, card or netbanking."}</p></div>
+    <div class="plan hl"><span class="pk gold">Premium</span><h3>Premium</h3><div class="amt">₹${PRICE}<small> / year</small></div>
+      <ul><li>Every available film, series and short drama${ready.length ? ` (${ready.length} today)` : ""}</li><li>No ads</li><li>Full HD where the video has it</li><li>Phone, computer and TV browser</li><li>Pay once, watch for 12 months</li><li>Cancel anytime</li></ul>
+      ${active ? `<a class="btn" href="#account" data-nav>Your plan · till ${day(s?.until)}</a>` : `<button class="btn gold" data-subscribe data-nav>Subscribe for ₹${PRICE} a year</button>`}
+      <p class="small">${S.billing === "subscription" ? "One payment a year. Renews yearly through UPI Autopay, card or netbanking, with a notice before each charge." : S.billing === "pass" ? "One payment for a full year (365 days). We email you before it ends; pay again to renew. It never charges you by itself." : DEMO ? "Demo mode: no money is taken." : "Pay with UPI, card or netbanking."}</p></div>
   </div>
   <h2 class="faqh">Questions</h2>
   ${faqHtml(ready)}
@@ -412,7 +412,7 @@ function vSignin(mode = "in") {
 function vAccount() {
   if (!S.user) return vSignin("in");
   const s = S.sub;
-  const planLine = S.premium ? (s?.status === "cancelling" ? `Premium till ${day(s.until)} · won't renew` : s?.mode === "subscription" ? `Premium · ₹${PRICE}/month · renews automatically` : `Premium till ${day(s?.until)}`) : "Free with ads";
+  const planLine = S.premium ? (s?.status === "cancelling" ? `Premium till ${day(s.until)} · won't renew` : s?.mode === "subscription" ? `Premium · ₹${PRICE}/year · renews once a year` : `Premium till ${day(s?.until)}`) : "Free with ads";
   const adult = S.profile?.adult;
   return `<div class="ptitle"><h1>Account</h1>${S.premium ? `<span class="badge prem">Premium</span>` : `<span class="badge free">Free with ads</span>`}</div>
   <div class="cards">
@@ -544,7 +544,7 @@ async function subscribe(btn) {
     if (o.mode === "test") return confirmSheet(`<span class="eyebrow">${DEMO ? "Demo mode" : "Test mode"}</span><h2>Start Premium?</h2><p>No money is taken${DEMO ? " in the demo" : " until Razorpay keys are added on Render"}.</p>`, "Start Premium", async () => { await api.subVerify({}); await afterPaid(); });
     await loadScript("https://checkout.razorpay.com/v1/checkout.js");
     const opts = {
-      key: o.keyId, name: "Lifeofline Movies", description: o.mode === "subscription" ? `Premium · ₹${o.price}/month` : `Premium · 30 days`,
+      key: o.keyId, name: "Lifeofline Movies", description: o.mode === "subscription" ? `Premium · ₹${o.price}/year` : `Premium · 1 year`,
       prefill: { name: S.user.name, email: S.user.email }, theme: { color: "#f4ad3d" },
       handler: async (r) => { try { await api.subVerify(r); await afterPaid(); } catch (e) { toast(e.message, 5000); } },
       modal: { ondismiss: () => { if (btn) btn.disabled = false; } },

@@ -70,13 +70,13 @@ export function createDemoApi() {
       }
       const eps = D.episodes[titleId] || []; const ep = epId ? eps.find((e) => e.id === epId) : eps[0];
       if (!ep) throw err("This episode isn't uploaded yet.");
-      if (!premium() && !freeEpisode(t, ep)) throw err("This is in the ₹99 Premium plan.", { needPlan: true });
+      if (!premium() && !freeEpisode(t, ep)) throw err("This is in the ₹499 yearly Premium plan.", { needPlan: true });
       return wait({ ...base, epId: ep.id, n: ep.n, name: ep.name, duration: ep.duration });
     },
 
-    async subStatus() { return wait({ mode: "test", price: 99, premium: premium(), sub: D.sub }); },
-    async subStart() { if (!D.user) throw err("Sign in first.", { needSignIn: true }); return wait({ mode: "test", price: 99 }); },
-    async subVerify() { D.sub = { status: "active", mode: "test", until: Math.max(Date.now(), D.sub?.until || 0) + 30 * 864e5, startedAt: Date.now() }; save(); return wait({ until: D.sub.until }); },
+    async subStatus() { return wait({ mode: "test", price: 499, premium: premium(), sub: D.sub }); },
+    async subStart() { if (!D.user) throw err("Sign in first.", { needSignIn: true }); return wait({ mode: "test", price: 499 }); },
+    async subVerify() { D.sub = { status: "active", mode: "test", until: Math.max(Date.now(), D.sub?.until || 0) + 365 * 864e5, startedAt: Date.now() }; save(); return wait({ until: D.sub.until }); },
     async subCancel() { if (!D.sub) throw err("You don't have an active plan."); D.sub.status = "cancelling"; save(); return wait({ until: D.sub.until }); },
 
     async setDob(dob) {

@@ -39,7 +39,7 @@ ArtistCart's Firebase project stays separate, so its users and rules are never t
    - URL: `https://lifeofline-movies-api.onrender.com/pay/webhook`
    - Secret: make up a long random password and keep it for Render
    - Events: `payment.captured`, `subscription.activated`, `subscription.charged`, `subscription.pending`, `subscription.halted`, `subscription.cancelled`, `subscription.completed`, `subscription.resumed`
-3. **Auto-renewing ₹99 plan:** Subscriptions must be switched on for the account. Ask Razorpay support (Dashboard → Help) to enable **Subscriptions with UPI Autopay**. Until then the app sells a **30-day pass** for ₹99 (paid again to renew, with a reminder email), like ArtistCart's Collab membership. When Razorpay confirms, set `RAZORPAY_SUBSCRIPTIONS` to `on` in Render. The ₹99 plan is created on Razorpay automatically on the first subscription.
+3. **Auto-renewing ₹499 yearly plan:** Subscriptions must be switched on for the account. Ask Razorpay support (Dashboard → Help) to enable **Subscriptions with UPI Autopay**. Until then the app sells a **1-year pass** for ₹499 (paid again to renew, with a reminder email), like ArtistCart's Collab membership. When Razorpay confirms, set `RAZORPAY_SUBSCRIPTIONS` to `on` in Render. The ₹499 yearly plan is created on Razorpay automatically on the first subscription.
 4. Razorpay checks that payments come from the website registered on the account (lifeofline.com). If they flag the onrender.com address, add the domain in step 6 and register it with Razorpay.
 
 ## 4. Brevo

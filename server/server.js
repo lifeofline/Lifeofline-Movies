@@ -1,5 +1,5 @@
 // lifeofline-movies-api — the small server on Render behind Lifeofline Movies.
-// It decides who may play what, hands out short-lived video links (Cloudflare Stream), takes the ₹99 Premium
+// It decides who may play what, hands out short-lived video links (Cloudflare Stream), takes the ₹499 yearly Premium
 // payment (Razorpay), lets admins upload videos, and sends emails through Brevo.
 // Everything else (catalogue, watch progress, My List) the app reads and writes in Firestore directly.
 //

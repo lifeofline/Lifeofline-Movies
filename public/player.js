@@ -74,7 +74,7 @@ async function start(P, epId, trailer, startAt) {
   }
   catch (e) {
     if (P.destroyed) return;
-    if (e.needPlan) return layer(P, `<div class="pcard"><span class="eyebrow">Premium</span><h3>${esc(e.message)}</h3><p>Unlock every movie, series and short drama with no ads.</p><div class="row"><button class="btn gold" data-pplan>See the ₹99 plan</button>${P.title.trailerUid || P.direct ? `<button class="btn ghost" data-ptrailer>Watch ${P.direct ? "poster teaser" : "trailer"}</button>` : ""}</div></div>`);
+    if (e.needPlan) return layer(P, `<div class="pcard"><span class="eyebrow">Premium</span><h3>${esc(e.message)}</h3><p>Unlock every movie, series and short drama with no ads.</p><div class="row"><button class="btn gold" data-pplan>See the ₹499 yearly plan</button>${P.title.trailerUid || P.direct ? `<button class="btn ghost" data-ptrailer>Watch ${P.direct ? "poster teaser" : "trailer"}</button>` : ""}</div></div>`);
     if (e.needSignIn) return layer(P, `<div class="pcard"><h3>${esc(e.message)}</h3><button class="btn gold" data-psignin>Sign in</button></div>`);
     if (e.needAge) return layer(P, `<div class="pcard"><span class="eyebrow">Rated A · 18+</span><h3>${esc(e.message)}</h3><button class="btn gold" data-page>Add date of birth</button></div>`);
     return errCard(P, "This video couldn't start.", e.message, e.status ? "api-" + e.status : "api");
@@ -150,7 +150,7 @@ async function adBreak(P, label) {
   layer(P, `<div class="pad" ${ad?.imageUrl ? `style="background:#000 url('${String(ad.imageUrl).replace(/'/g, "%27")}') center/contain no-repeat"` : ""}>
       <span class="adlbl">${esc(label)} · Ad</span>
       ${ad ? (ad.link ? `<a class="btn sm ghost adlink" href="${esc(ad.link)}" target="_blank" rel="noopener sponsored">${esc(ad.cta || "Learn more")}</a>` : "") + (ad.imageUrl ? "" : `<h3>${esc(ad.title || "Sponsored")}</h3>`)
-        : `<span class="eyebrow">Lifeofline Premium</span><h3>Watch everything with no ads</h3><button class="btn gold" data-pplan>Go ad-free for ₹99</button>`}
+        : `<span class="eyebrow">Lifeofline Premium</span><h3>Watch everything with no ads</h3><button class="btn gold" data-pplan>Go ad-free for ₹499 a year</button>`}
       <span class="adcd" id="adcd">Video in ${secs}s</span></div>`);
   for (let s = secs; s > 0; s--) { const c = $("#adcd", P.ov); if (c) c.textContent = `Video in ${s}s`; await sleep(1000); if (P.destroyed || P.phase !== "ad") return; }
   layer(P, ""); P.phase = prev === "rating" || prev === "load" ? "play" : prev;
@@ -178,7 +178,7 @@ function goNext(P, ep) {
   if (!ep) return;
   save(P);
   // Locked episodes show the plan card inside the player instead of a failed request.
-  if (!freeEpisode(P.title, ep) && !P.res?.premium) { P.video.pause(); P.ep = ep; return layer(P, `<div class="pcard"><span class="eyebrow">Episode ${ep.n} is locked</span><h3>Keep watching ${esc(P.title.title)}</h3><p>All episodes, no ads, for ₹99 a month.</p><button class="btn gold" data-pplan>See the ₹99 plan</button></div>`); }
+  if (!freeEpisode(P.title, ep) && !P.res?.premium) { P.video.pause(); P.ep = ep; return layer(P, `<div class="pcard"><span class="eyebrow">Episode ${ep.n} is locked</span><h3>Keep watching ${esc(P.title.title)}</h3><p>All episodes, no ads, for ₹499 a year.</p><button class="btn gold" data-pplan>See the ₹499 yearly plan</button></div>`); }
   P.video.pause();
   start(P, ep.id, false, 0);
 }

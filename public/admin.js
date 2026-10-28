@@ -79,7 +79,7 @@ export async function mountAdmin(root, { api, reload }) {
           <div class="pprev ${t.format === "v" ? "v" : ""}" id="pprev" style="${posterStyle(t)}">${t.poster ? "" : `<div class="pt">${esc(t.title || "Poster")}</div>`}</div>
           <label class="f">Poster image (${t.format === "v" ? "9:16" : "2:3 portrait"})<input type="file" id="f_poster" accept="image/*" data-nav></label>
           <label class="f">Banner image for the top of Home (16:9 wide, no text near the left side)${t.banner ? " · uploaded" : ""}<input type="file" id="f_banner" accept="image/*" data-nav></label>
-          <label class="check"><input type="checkbox" id="f_premium" ${t.premium !== false ? "checked" : ""} data-nav> In the ₹99 Premium plan</label>
+          <label class="check"><input type="checkbox" id="f_premium" ${t.premium !== false ? "checked" : ""} data-nav> In the ₹499 yearly Premium plan</label>
           <label class="f">Free episodes for free users (blank = default: short dramas 3, series 1, movies 0)<input id="f_freeEps" inputmode="numeric" maxlength="2" value="${t.freeEps ?? ""}" data-nav></label>
           <label class="check"><input type="checkbox" id="f_original" ${t.original ? "checked" : ""} data-nav> Lifeofline Original</label>
           <label class="f">Order on the home screen (lower shows first)<input id="f_order" inputmode="numeric" value="${t.order ?? ""}" data-nav></label>
@@ -116,7 +116,7 @@ export async function mountAdmin(root, { api, reload }) {
   }
 
   function adsView() {
-    return `<p class="small">Free-plan viewers see one of these before each title (and halfway through titles over 10 minutes). With no ads here, the slot shows a “Go ad-free for ₹99” message.</p>
+    return `<p class="small">Free-plan viewers see one of these before each title (and halfway through titles over 10 minutes). With no ads here, the slot shows a “Go ad-free for ₹499 a year” message.</p>
       <div class="cards">${A.ads.map((a) => `<div class="card"><div class="adprev" style="${a.imageUrl ? `background:#000 url('${esc(a.imageUrl)}') center/contain no-repeat` : ""}">${a.imageUrl ? "" : esc(a.title || "")}</div>
         <div class="kv"><span>${esc(a.title || "Ad")}</span><span>${a.active ? `<span class="ok">Running</span>` : "Paused"}</span></div><div class="kv"><span>Length</span><span>${a.seconds || 6}s</span></div>
         <div class="row"><button class="btn sm ghost" data-adtog="${esc(a.id)}" data-nav>${a.active ? "Pause" : "Run"}</button><button class="btn sm ghost danger" data-addel="${esc(a.id)}" data-nav>Delete</button></div></div>`).join("")}</div>

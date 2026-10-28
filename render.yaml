@@ -52,7 +52,7 @@ services:
         sync: false
       - key: RAZORPAY_WEBHOOK_SECRET
         sync: false
-      - key: RAZORPAY_SUBSCRIPTIONS     # "on" once Razorpay has switched on Subscriptions (auto-renew). Otherwise 30-day passes.
+      - key: RAZORPAY_SUBSCRIPTIONS     # "on" once Razorpay has switched on Subscriptions (auto-renew). Otherwise 1-year passes (₹499).
         value: "off"
       # Email (Brevo, same account as ArtistCart)
       - key: BREVO_API_KEY

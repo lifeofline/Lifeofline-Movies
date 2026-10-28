@@ -1,9 +1,9 @@
-// Premium: ₹99 a month through Razorpay (the Lifeofline Pvt Ltd account already used by ArtistCart).
+// Premium: ₹499 a year (one payment a year) through Razorpay (the Lifeofline Pvt Ltd account already used by ArtistCart).
 //
 // Two ways to charge, picked on Render:
 //   RAZORPAY_SUBSCRIPTIONS=on  → auto-renewing subscription (UPI Autopay, cards, e-mandate). Needs Razorpay
 //                                Subscriptions switched on for the account.
-//   (not set)                  → a 30-day pass paid with a normal order, like ArtistCart's Collab membership.
+//   (not set)                  → a 1-year pass paid with a normal order, like ArtistCart's Collab membership.
 //                                Works today; people renew by paying again (they get a reminder email).
 // Without RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET everything runs in TEST MODE: nothing is charged.
 //
@@ -12,8 +12,10 @@
 //     until: <ms, Premium works until then>, rzpSubId?, startedAt, reminded? }
 const crypto = require("crypto");
 
-const PRICE = Number(process.env.PREMIUM_PRICE || 99); // ₹ incl. GST
-const PASS_DAYS = 30;
+const PRICE = Number(process.env.PREMIUM_PRICE || 499); // ₹ incl. GST, for a year
+const PERIOD = "yearly"; // charged once a year
+const PASS_DAYS = 365;
+const REMIND_DAYS = 7; // reminder email before a pass ends
 const GRACE_MS = 2 * 864e5; // Autopay debits can land a day late
 
 module.exports = function makeBilling({ db, FieldValue, env, sendEmail, link }) {
@@ -53,13 +55,13 @@ module.exports = function makeBilling({ db, FieldValue, env, sendEmail, link }) 
     return !!s && s.until > now() && s.status !== "halted";
   }
 
-  // The monthly plan is created once on Razorpay and remembered.
+  // The yearly plan is created once on Razorpay and remembered.
   async function planId() {
     if (env.RAZORPAY_PLAN_ID) return env.RAZORPAY_PLAN_ID;
     const cfg = db.doc("server/razorpay"); const c = (await cfg.get()).data() || {};
-    if (c.planId && c.price === PRICE) return c.planId;
-    const p = await rzp("POST", "/v1/plans", { period: "monthly", interval: 1, item: { name: "Lifeofline Movies Premium", amount: PRICE * 100, currency: "INR", description: "All movies, series and short dramas. No ads." } });
-    await cfg.set({ planId: p.id, price: PRICE, createdAt: now() }, { merge: true });
+    if (c.planId && c.price === PRICE && c.period === PERIOD) return c.planId; // a new price or period makes a new plan
+    const p = await rzp("POST", "/v1/plans", { period: PERIOD, interval: 1, item: { name: "Lifeofline Movies Premium", amount: PRICE * 100, currency: "INR", description: "All movies, series and short dramas. No ads." } });
+    await cfg.set({ planId: p.id, price: PRICE, period: PERIOD, createdAt: now() }, { merge: true });
     return p.id;
   }
 
@@ -79,7 +81,7 @@ module.exports = function makeBilling({ db, FieldValue, env, sendEmail, link }) 
     }
     if (res.fresh) await sendEmail(uid, "Welcome to Lifeofline Movies Premium", [
       `Every movie, series and short drama is now unlocked, with no ads.`,
-      mode === "subscription" ? `Your ₹${PRICE} plan renews every month. You'll get a notice before each charge, and you can cancel anytime in Account.` : `Your Premium pass is active till ${day(res.until)}.`,
+      mode === "subscription" ? `Your ₹${PRICE} plan renews once a year. You'll get a notice before each charge, and you can cancel anytime in Account.` : `Your Premium pass is active till ${day(res.until)}.`,
     ], { label: "Start watching", url: link("") }).catch(() => {});
     return res.until;
   }
@@ -88,7 +90,7 @@ module.exports = function makeBilling({ db, FieldValue, env, sendEmail, link }) 
     // What the Plans and Account pages show.
     async status(uid) {
       const s = (await ref(uid).get()).data() || null;
-      return { mode: MODE, price: PRICE, premium: !!s && s.until > now() && s.status !== "halted", sub: s };
+      return { mode: MODE, price: PRICE, period: PERIOD, premium: !!s && s.until > now() && s.status !== "halted", sub: s };
     },
 
     async start(uid) {
@@ -96,7 +98,7 @@ module.exports = function makeBilling({ db, FieldValue, env, sendEmail, link }) 
       if (s.until > now() && s.status === "active" && s.mode === "subscription") throw show("You already have Premium.");
       if (MODE === "test") return { mode: "test", price: PRICE };
       if (MODE === "subscription") {
-        const sub = await rzp("POST", "/v1/subscriptions", { plan_id: await planId(), total_count: 120, customer_notify: 1, notes: { uid, app: "lifeofline-movies" } });
+        const sub = await rzp("POST", "/v1/subscriptions", { plan_id: await planId(), total_count: 10 /* 10 yearly renewals at most */, customer_notify: 1, notes: { uid, app: "lifeofline-movies" } });
         await ref(uid).set({ pendingSubId: sub.id, updatedAt: now() }, { merge: true });
         return { mode: MODE, keyId: KEY, subscriptionId: sub.id, price: PRICE };
       }
@@ -113,7 +115,7 @@ module.exports = function makeBilling({ db, FieldValue, env, sendEmail, link }) 
         const s = (await ref(uid).get()).data() || {};
         const subId = String(b.razorpay_subscription_id || "");
         if (!s.pendingSubId || subId !== s.pendingSubId || !same(hmac(`${pid}|${subId}`), sig)) throw show("We couldn't confirm this payment. If money was taken, it will be refunded automatically.");
-        return { until: await grant(uid, { mode: "subscription", days: 31, rzpSubId: subId, paymentId: pid }) };
+        return { until: await grant(uid, { mode: "subscription", days: PASS_DAYS + 1, rzpSubId: subId, paymentId: pid }) };
       }
       const orderId = String(b.razorpay_order_id || "");
       const o = (await db.doc(`passOrders/${orderId}`).get()).data();
@@ -173,16 +175,16 @@ module.exports = function makeBilling({ db, FieldValue, env, sendEmail, link }) 
     return { status: 200, body: { ok: true } };
   }
 
-  // Hourly: remind 30-day pass holders 3 days before it ends, and mark ended plans.
+  // Hourly: remind pass holders a week before it ends, and mark ended plans.
   async function hourly() {
     try {
-      const soon = await db.collection("subs").where("until", ">", now()).where("until", "<=", now() + 3 * 864e5).get();
+      const soon = await db.collection("subs").where("until", ">", now()).where("until", "<=", now() + REMIND_DAYS * 864e5).get();
       for (const d of soon.docs) {
         const s = d.data();
         if (s.mode === "subscription" && s.status === "active") continue; // renews by itself
         if (s.reminded === s.until) continue;
         await d.ref.update({ reminded: s.until });
-        await sendEmail(d.id, "Your Premium ends soon", [`Your Lifeofline Movies Premium ends on ${day(s.until)}.`, `Renew for ₹${PRICE} to keep watching everything without ads.`], { label: "Renew", url: link("plans") }).catch(() => {});
+        await sendEmail(d.id, "Your Premium ends soon", [`Your Lifeofline Movies Premium ends on ${day(s.until)}.`, `Renew for ₹${PRICE} a year to keep watching everything without ads.`], { label: "Renew", url: link("plans") }).catch(() => {});
       }
     } catch (e) { console.error("billing hourly", e.message); }
   }
@@ -194,5 +196,5 @@ module.exports = function makeBilling({ db, FieldValue, env, sendEmail, link }) 
     catch (e) { if (e.show) return { status: e.status || 400, body: { error: e.message } }; throw e; }
   }
 
-  return { LIVE, MODE, PRICE, handle, webhook, hourly, isPremium, grant };
+  return { LIVE, MODE, PRICE, PERIOD, handle, webhook, hourly, isPremium, grant };
 };
