@@ -1,7 +1,7 @@
 // Offline shell: caches the app files so it opens fast and installs as an app.
 // Catalogue and videos always come live (videos are never cached here).
-const CACHE = "lm-v2";
-const SHELL = ["./", "index.html", "styles.css", "app.js", "player.js", "util.js", "access.js", "config.js", "api-firebase.js", "manifest.webmanifest", "icon-192.png"];
+const CACHE = "lm-v3";
+const SHELL = ["./", "index.html", "styles.css", "app.js", "player.js", "util.js", "access.js", "starter-titles.js", "config.js", "api-firebase.js", "manifest.webmanifest", "icon-192.png"];
 
 self.addEventListener("install", (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", (e) => {

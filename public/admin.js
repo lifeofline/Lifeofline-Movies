@@ -19,10 +19,10 @@ export async function mountAdmin(root, { api, reload }) {
   }
 
   function titleList() {
-    return `<div class="row"><button class="btn gold" data-anew data-nav>＋ Add a title</button></div>
+    return `<div class="row"><button class="btn gold" data-anew data-nav>＋ Add a title</button><button class="btn ghost" data-astarter data-nav>Add the 20 Lifeofline films (Coming soon)</button></div>
       <div class="tbl"><table class="atable"><thead><tr><th></th><th>Title</th><th>Type</th><th>Language</th><th>Rating</th><th>Plan</th><th>Episodes</th><th>Status</th><th></th></tr></thead><tbody>
       ${A.titles.map((t) => `<tr><td><span class="mini" style="${posterStyle(t)}"></span></td><td><b>${esc(t.title)}</b>${t.original ? ` <span class="small">Original</span>` : ""}</td><td>${esc(KINDS[t.kind] || "")}</td><td>${esc(t.lang || "")}</td><td><span class="rating">${esc(t.rating || "")}</span></td>
-        <td>${t.premium ? "Premium" : "Free"}</td><td>${t.episodeCount || 0}</td><td>${t.published ? `<span class="ok">Live</span>` : `<span class="small">Draft</span>`}</td>
+        <td>${t.premium ? "Premium" : "Free"}</td><td>${t.episodeCount || 0}</td><td>${!t.published ? `<span class="small">Draft</span>` : t.comingSoon ? `<span class="small">Coming soon</span>` : `<span class="ok">Live</span>`}</td>
         <td><button class="btn sm ghost" data-aedit="${esc(t.id)}" data-nav>Edit</button></td></tr>`).join("") || `<tr><td colspan="9" class="small">No titles yet. Add the first one.</td></tr>`}
       </tbody></table></div>`;
   }
@@ -54,6 +54,7 @@ export async function mountAdmin(root, { api, reload }) {
           <label class="check"><input type="checkbox" id="f_original" ${t.original ? "checked" : ""} data-nav> Lifeofline Original</label>
           <label class="f">Order on the home screen (lower shows first)<input id="f_order" inputmode="numeric" value="${t.order ?? ""}" data-nav></label>
           <label class="check"><input type="checkbox" id="f_published" ${t.published ? "checked" : ""} data-nav> Published (visible in the app)</label>
+          <label class="check"><input type="checkbox" id="f_soon" ${t.comingSoon ? "checked" : ""} data-nav> Coming soon (shows the poster; can't be played yet)</label>
           <div class="upl"><b>Trailer</b> <span class="small">${t.trailerUid ? "Uploaded" : "None"} · always free</span><input type="file" id="f_trailer" accept="video/*" data-nav><div class="bar" id="trbar" hidden><i></i></div></div>
         </div>
       </div>
@@ -121,6 +122,7 @@ export async function mountAdmin(root, { api, reload }) {
       ...(t.id ? { id: t.id } : {}), title: v("title"), kind: v("kind"), format: v("format"), lang: v("lang"), rating: v("rating"),
       descriptor: v("descriptor"), genre: v("genre"), desc: v("desc"), cast: v("cast").split(",").map((s) => s.trim()).filter(Boolean).slice(0, 20),
       year: v("year"), premium: $("#f_premium").checked, original: $("#f_original").checked, published: $("#f_published").checked,
+      comingSoon: $("#f_soon").checked,
       freeEps: num(v("freeEps")), order: num(v("order")) ?? 99, poster: t.poster || "", trailerUid: t.trailerUid || "", hue: t.hue || hues(v("title")),
     };
   }
@@ -129,6 +131,12 @@ export async function mountAdmin(root, { api, reload }) {
     const b = e.target.closest("button"); if (!b) return;
     if (b.dataset.atab) { A.tab = b.dataset.atab; A.editing = null; if (A.tab === "ads") A.ads = await api.allAds(); return render(); }
     if (b.hasAttribute("data-anew")) return openTitle(null);
+    if (b.hasAttribute("data-astarter")) {
+      b.disabled = true;
+      try { const n = await window.__addStarterTitles({ force: true }); toast(n ? `Added ${n} films as Coming soon` : "All 20 films are already here"); await reload(); return refresh(); }
+      catch (er) { toast(er.message, 5000); b.disabled = false; }
+      return;
+    }
     if (b.dataset.aedit) return openTitle(b.dataset.aedit);
     if (b.hasAttribute("data-aback")) { A.editing = null; return refresh(); }
     if (b.hasAttribute("data-adel")) {

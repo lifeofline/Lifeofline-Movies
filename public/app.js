@@ -1,7 +1,8 @@
 // Lifeofline Movies — the app people open on phones, computers and TVs.
 // Hash routes: #home #reels #movies #series #search #t/<titleId> #plans #account #signin #grievance #admin
 import { firebaseConfig, appConfig } from "./config.js";
-import { $, $$, esc, day, dur, posterStyle, loadScript, toast, isTV } from "./util.js";
+import { $, $$, esc, day, dur, posterStyle, isSoon, loadScript, toast, isTV } from "./util.js";
+import { STARTER_TITLES } from "./starter-titles.js";
 import { LANGS, KINDS, KIDS_OK, freeEpisode } from "./access.js";
 import { openPlayer } from "./player.js";
 
@@ -57,7 +58,7 @@ function shell(route) {
 /* ---------- pieces ---------- */
 function tile(t, shape = "tall") {
   const p = S.progress[t.id];
-  const tag = t.premium ? `<span class="tag prem">Premium</span>` : `<span class="tag">Free</span>`;
+  const tag = isSoon(t) ? `<span class="tag soon">Coming soon</span>` : t.premium ? `<span class="tag prem">Premium</span>` : `<span class="tag">Free</span>`;
   const pct = p?.dur ? Math.min(100, (p.pos / p.dur) * 100) : 0;
   return `<a class="tile" href="#t/${esc(t.id)}" data-nav aria-label="${esc(t.title)}">
     <div class="poster ${shape}" style="${posterStyle(t)}">${tag}${t.format === "v" ? '<span class="tag r">9:16</span>' : ""}${t.poster ? "" : `<div class="pt">${esc(t.title)}</div>`}</div>
@@ -73,34 +74,45 @@ const chips = () => `<div class="chips" role="group" aria-label="Language">${["A
 const empty = (msg, cta = "") => `<div class="empty"><p>${msg}</p>${cta}</div>`;
 
 /* ---------- views ---------- */
+const GENRE_RAILS = [
+  ["Thrillers and crime", /thriller|crime|mystery|heist|underworld/i],
+  ["Family and feel-good", /family|comedy|slice of life|friendship/i],
+  ["Romance", /romance|love/i],
+  ["Action", /action|war|patriot/i],
+  ["Drama", /drama|social|courtroom/i],
+];
 function vHome() {
   const all = visible();
   if (!all.length) return empty(S.ready ? (S.admin ? "No titles published yet. Add the first one in Admin." : "New titles are on the way. Check back soon.") : `<span class="spin"></span>`, S.admin ? `<a class="btn gold" href="#admin">Open Admin</a>` : "");
-  const feat = all.filter((t) => t.original).slice(0, 6); const pool = feat.length ? feat : all.slice(0, 6);
+  const ready = all.filter((t) => !isSoon(t));
+  const pool = [...ready.filter((t) => t.original), ...ready.filter((t) => !t.original), ...all.filter(isSoon)].slice(0, 6);
   const h = pool[S.heroI % pool.length];
   const cont = Object.entries(S.progress).sort((a, b) => b[1].at - a[1].at).map(([id]) => byId(id)).filter(Boolean).filter((t) => visible().includes(t));
   const list = S.list.map(byId).filter(Boolean);
   const L = inLang(all);
   return `<section class="hero">
-      <div class="hart" style="${posterStyle(h)}"></div><div class="hshade"></div>
+      <div class="hart" style="${posterStyle(h, "right center")}"></div><div class="hshade"></div>
       <div class="hcopy">
         <span class="eyebrow">${h.original ? "Lifeofline Original · " : ""}${esc(KINDS[h.kind] || "")}</span>
         <h1>${esc(h.title)}</h1>
         <div class="meta"><span class="rating">${esc(h.rating)}</span><span>${esc(h.genre || "")}</span><span>${esc(h.lang || "")}</span></div>
         <p>${esc(h.desc || "")}</p>
-        <div class="row"><button class="btn gold" data-play="${esc(h.id)}" data-nav>▶ Play</button><a class="btn ghost" href="#t/${esc(h.id)}" data-nav>Details</a></div>
+        <div class="row">${isSoon(h) ? `<span class="badge soon">Coming soon</span><button class="btn gold" data-listtog="${esc(h.id)}" data-nav>${S.list.includes(h.id) ? "✓ In My List" : "＋ My List"}</button>` : `<button class="btn gold" data-play="${esc(h.id)}" data-nav>▶ Play</button>`}<a class="btn ghost" href="#t/${esc(h.id)}" data-nav>Details</a></div>
       </div>
       ${pool.length > 1 ? `<div class="dots">${pool.map((_, i) => `<button aria-label="Featured ${i + 1}" class="${i === S.heroI % pool.length ? "on" : ""}" data-hero="${i}"></button>`).join("")}</div>` : ""}
     </section>
     ${chips()}
     ${rail("Continue watching", cont, { shape: "wide" })}
+    ${rail("New on Lifeofline", L.filter((t) => !isSoon(t)).slice(0, 12), { shape: "wide" })}
+    ${rail("Coming soon", L.filter(isSoon), { sub: "Add to My List to find them on release" })}
     ${rail("Reels · short dramas", L.filter((t) => t.kind === "short"), { more: "#reels", sub: "Two-minute episodes" })}
     ${S.premium || S.kids?.on ? "" : `<div class="strip"><div class="price">₹${PRICE}<small> / month</small></div><p>Every title, no ads, Full HD, on your phone, computer and TV. Cancel anytime.</p><a class="btn gold" href="#plans" data-nav>See the plan</a></div>`}
     ${rail("My List", list, { shape: "tall" })}
     ${rail("Lifeofline Originals", L.filter((t) => t.original && t.kind !== "short"), { shape: "wide" })}
     ${rail("Movies", L.filter((t) => t.kind === "movie"), { shape: "wide", more: "#movies" })}
     ${rail("Web series", L.filter((t) => t.kind === "series"), { shape: "wide", more: "#series" })}
-    ${rail("Free with ads", L.filter((t) => !t.premium), { sub: "No plan needed" })}
+    ${rail("Free with ads", L.filter((t) => !t.premium && !isSoon(t)), { sub: "No plan needed" })}
+    ${GENRE_RAILS.map(([name, re]) => { const g = L.filter((t) => re.test(t.genre || "")); return g.length >= 3 ? rail(name, g) : ""; }).join("")}
     ${L.length ? "" : empty(`Nothing in ${esc(S.lang)} yet.`)}`;
 }
 
@@ -143,7 +155,8 @@ async function vTitle(id) {
   const p = S.progress[id];
   const first = p ? eps.find((e) => e.id === p.epId) || eps[0] : eps[0];
   const locked = (e) => !S.premium && !freeEpisode(t, e);
-  const note = !S.premium && t.premium ? (t.kind === "short" ? `Episodes 1–${t.freeEps ?? 3} are free with ads. The rest are in the ₹${PRICE} plan.`
+  const soon = isSoon(t) && !(S.admin && first); // admins can still test a coming-soon title once a video is uploaded
+  const note = soon ? "Not out yet. Add it to My List and you'll find it there on release." : !S.premium && t.premium ? (t.kind === "short" ? `Episodes 1–${t.freeEps ?? 3} are free with ads. The rest are in the ₹${PRICE} plan.`
     : t.kind === "series" ? `Episode 1 is free with ads. The rest are in the ₹${PRICE} plan.` : `This movie is in the ₹${PRICE} plan.${t.trailerUid ? " The trailer is free." : ""}`) : "";
   const runtime = t.kind === "movie" ? dur(eps[0]?.duration) : `${eps.length} episode${eps.length === 1 ? "" : "s"}`;
   return `<div class="detail ${t.format === "v" ? "v" : ""}">
@@ -156,12 +169,13 @@ async function vTitle(id) {
       <p class="desc">${esc(t.desc || "")}</p>
       ${t.cast?.length ? `<p class="small">Cast: ${esc(t.cast.join(", "))}</p>` : ""}
       <div class="row">
-        ${first ? `<button class="btn gold" data-play="${esc(t.id)}" data-ep="${esc(first.id)}" data-nav>▶ ${p ? (t.kind === "movie" ? "Resume" : `Continue ep ${first.n}`) : t.kind === "movie" ? "Play" : "Play episode 1"}</button>` : `<span class="small">Coming soon</span>`}
+        ${soon ? `<span class="badge soon">Coming soon</span>` : first ? `<button class="btn gold" data-play="${esc(t.id)}" data-ep="${esc(first.id)}" data-nav>▶ ${p ? (t.kind === "movie" ? "Resume" : `Continue ep ${first.n}`) : t.kind === "movie" ? "Play" : "Play episode 1"}</button>` : `<span class="small">Coming soon</span>`}
         ${t.trailerUid ? `<button class="btn ghost" data-trailer="${esc(t.id)}" data-nav>Trailer</button>` : ""}
         <button class="btn ghost" data-listtog="${esc(t.id)}" data-nav>${S.list.includes(t.id) ? "✓ In My List" : "＋ My List"}</button>
         <button class="btn ghost" data-share="${esc(t.id)}" data-nav>Share</button>
       </div>
-      ${note ? `<p class="small">${note} ${S.user ? "" : ""}<a href="#plans">See the plan</a></p>` : ""}
+      ${note ? `<p class="small">${note}${soon ? "" : ` <a href="#plans">See the plan</a>`}</p>` : ""}
+      ${soon && S.admin ? `<p class="small">Admin: upload the film in <a href="#admin">Admin</a>, then untick “Coming soon”.</p>` : ""}
       ${t.kind !== "movie" && eps.length ? `<h3>Episodes</h3><div class="eps">${eps.map((e) => {
         const ep = S.progress[id]?.epId === e.id ? S.progress[id] : null;
         return `<button class="ep" data-play="${esc(t.id)}" data-ep="${esc(e.id)}" data-nav>
@@ -276,6 +290,7 @@ window.addEventListener("hashchange", () => { if (history.state?.player) return;
 async function play(titleId, epId, trailer = false) {
   const t = byId(titleId) || (await api.title(titleId));
   if (!t) return toast("This title isn't available.");
+  if (!trailer && isSoon(t) && !S.admin) return toast(`${t.title} is coming soon. Add it to My List to find it on release.`);
   const eps = S.eps?.id === titleId ? S.eps.eps : await api.episodes(titleId).catch(() => []);
   S.eps = { id: titleId, eps };
   const p = S.progress[titleId];
@@ -428,9 +443,21 @@ shell("home");
 await loadCatalogue();
 S.ready = true;
 route();
+// First time an admin opens the app: add the 20 Lifeofline films as "Coming soon" titles (only if none are there yet).
+async function addStarterTitles({ force = false } = {}) {
+  const have = new Set((await api.allTitles()).map((t) => t.id));
+  const missing = STARTER_TITLES.filter((t) => !have.has(t.id));
+  if (!missing.length || (!force && missing.length < STARTER_TITLES.length)) return 0;
+  for (const t of missing) await api.saveTitle({ ...t, episodeCount: 0 });
+  await loadCatalogue();
+  return missing.length;
+}
+window.__addStarterTitles = addStarterTitles;
+
 api.onAuth(async (u) => {
   S.user = u;
   await loadMine();
+  if (S.admin) addStarterTitles().then((n) => { if (n) { toast(`Added ${n} Lifeofline films as “Coming soon”.`, 4000); route(); } }).catch((e) => console.warn("starter titles", e));
   if (u && S.after) { const go = S.after; S.after = null; location.hash = go; }
   else if (u && /^#(signin|signup|reset)$/.test(location.hash)) location.hash = "#home";
   route();

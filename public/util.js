@@ -19,7 +19,14 @@ export function art(t) {
   return `background:radial-gradient(120% 80% at 80% 10%,hsl(${b} 70% 52% / .85),transparent 60%),radial-gradient(90% 70% at 10% 90%,hsl(${a} 75% 45%),transparent 70%),linear-gradient(160deg,hsl(${a} 45% 22%),hsl(${b} 40% 12%));`;
 }
 export function hues(s) { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return [h % 360, (h >> 9) % 360]; }
-export const posterStyle = (t) => (t?.poster ? `background:#1d1727 url('${String(t.poster).replace(/'/g, "%27")}') center/cover no-repeat;` : art(t));
+// Any poster shape (square, 2:3, 16:9) fits whole in any tile: the poster itself on top, a dimmed copy filling the rest.
+export const posterStyle = (t, pos = "center") => {
+  if (!t?.poster) return art(t);
+  const u = `url('${String(t.poster).replace(/'/g, "%27")}')`;
+  return `background:${u} ${pos}/contain no-repeat,linear-gradient(rgba(20,15,28,.74),rgba(20,15,28,.74)),${u} center/cover no-repeat #1d1727;`;
+};
+// A title with no video yet: shown as "Coming soon", can't be played.
+export const isSoon = (t) => t?.comingSoon === true || !(Number(t?.episodeCount) > 0);
 
 const loaded = {};
 export function loadScript(src) {

@@ -94,6 +94,8 @@ h1, h2, h3 { font-family: var(--f-display); margin: 0; letter-spacing: -.01em; t
 .wide .pt { font-size: 22px; }
 .tag { position: absolute; top: 8px; left: 8px; font-family: var(--f-mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; padding: 3px 7px; border-radius: 5px; background: rgba(20,15,28,.75); }
 .tag.prem { background: var(--gold); color: var(--gold-ink); }
+.tag.soon { background: var(--rose); color: #fff; }
+.badge.soon { background: color-mix(in srgb, var(--rose) 22%, transparent); color: var(--rose); align-self: center; }
 .tag.r { left: auto; right: 8px; }
 .cap { font-size: 13px; color: var(--muted); display: flex; flex-direction: column; min-width: 0; }
 .cap b, .cap span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
