@@ -184,8 +184,10 @@ function planStrip(ready) {
 // Full-width banner that rotates through up to 6 titles, playing each one's teaser, like the big streaming apps.
 function heroCarousel(pool) {
   const slide = (h, i) => {
-    const wide = !!h.banner; // a purpose-made 16:9 banner fills the whole slide
-    const img = h.banner || h.poster;
+    // A purpose-made 16:9 banner fills the whole slide. The demo series' landscape images are text cards with the
+    // poster inside, which get cropped and zoomed when stretched to fill, so those slides use the poster layout.
+    const wide = !!h.banner && !isDemo(h);
+    const img = wide ? h.banner : h.poster || h.banner;
     const bg = img ? `background-image:url('${String(img).replace(/'/g, "%27")}')` : posterStyle(h);
     return `<article class="slide ${i === 0 ? "on" : ""}" data-i="${i}" aria-roledescription="slide" aria-label="${i + 1} of ${pool.length}: ${esc(h.title)}" ${i ? 'aria-hidden="true"' : ""}>
       <div class="sbg ${wide ? "wide" : ""}" style="${bg}"></div>
@@ -212,7 +214,7 @@ function heroCarousel(pool) {
 }
 
 let heroTimer = 0;
-const HERO_MS = 2000; // a new banner every 2 seconds
+const HERO_MS = 3000; // a new banner every 3 seconds
 function mountHero() {
   clearInterval(heroTimer);
   const hero = $("#hero"); if (!hero) return;

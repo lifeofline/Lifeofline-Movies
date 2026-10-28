@@ -92,7 +92,7 @@ body.home .top:not(.solid), body.titlepg .top:not(.solid) { background: linear-g
 .dots button { width: 34px; height: 4px; border: 0; border-radius: 3px; background: rgba(255,255,255,.25); padding: 0; overflow: hidden; position: relative; }
 .dots button i { position: absolute; inset: 0; width: 0; background: var(--gold); }
 .dots button.on i { width: 100%; }
-.hero.auto .dots button.on.run i { width: 0; animation: fill 2s linear forwards; }
+.hero.auto .dots button.on.run i { width: 0; animation: fill 3s linear forwards; }
 .hero.paused .dots button.on.run i { animation-play-state: paused; }
 .dots button.on { background: rgba(255,255,255,.45); }
 @keyframes fill { to { width: 100%; } }
