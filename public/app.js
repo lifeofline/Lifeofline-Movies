@@ -141,10 +141,12 @@ function vHome() {
   const demos = inLang(all.filter(isDemo));
   const upcoming = inLang(all.filter((t) => isSoon(t) && !isConcept(t)));
   const concepts = inLang(all.filter(isConcept));
-  // Banner: only titles people can watch now. With nothing playable yet, the concept films, clearly labelled.
+  // Banner: always several slides so it keeps rolling. Titles people can watch now come first; while there are
+  // only a few, it fills up with the demo series and concept films (each clearly labelled on its slide).
   const art = (t) => !!(t.banner || t.poster || t.teaser);
-  let pool = [...new Set([...ready.filter(art), ...ready])].slice(0, 5);
-  if (!pool.length) pool = [...all.filter((t) => isSoon(t) && !isConcept(t) && art(t)), ...all.filter((t) => isConcept(t) && art(t))].slice(0, 6);
+  const fill = [], d0 = all.filter((t) => isDemo(t) && art(t)), dq = [...d0.slice(d0.length >> 1), ...d0.slice(0, d0.length >> 1)], cq = all.filter((t) => isConcept(t) && art(t));
+  while (dq.length || cq.length) { if (cq.length) fill.push(cq.shift()); if (dq.length) fill.push(dq.shift()); }
+  const pool = [...new Set([...ready.filter(art), ...all.filter((t) => isSoon(t) && !isConcept(t) && art(t)), ...fill])].slice(0, 8);
   const cont = Object.entries(S.progress).sort((a, b) => b[1].at - a[1].at).map(([id]) => byId(id)).filter(Boolean).filter((t) => visible().includes(t) && avail(t));
   const list = S.list.map(byId).filter(Boolean);
   const newest = [...R].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0) || (a.order ?? 999) - (b.order ?? 999));
@@ -155,6 +157,8 @@ function vHome() {
     ${S.premium ? "" : rail("Watch free now", R.filter(freeNow), { sub: "No plan needed · short ad breaks" })}
     ${rail("Continue watching", cont, { shape: "wide" })}
     ${rail("New on Lifeofline", newest.slice(0, 12), { shape: "wide" })}
+    ${many ? "" : rail("Series · demo", demos, { sub: "Fictional animated story cards · free, no ads" })}
+    ${many ? "" : rail("Films · concept showcase", concepts, { sub: "Fictional films in development · animated poster teasers" })}
     ${top10(ready)}
     ${rail("Reels · short dramas", R.filter((t) => t.kind === "short"), { more: "#reels", sub: "Two-minute episodes" })}
     ${many ? row("Lifeofline Originals", R.filter((t) => t.original && t.kind !== "short"), { shape: "wide" }) : ""}
@@ -163,10 +167,10 @@ function vHome() {
     ${many ? GENRE_RAILS.map(([name, re]) => row(name, R.filter((t) => re.test(t.genre || "")))).join("") : ""}
     ${many ? LANGS.map((l) => row(`In ${l}`, ready.filter((t) => t.lang === l))).join("") : ""}
     ${rail("My List", list, { shape: "tall" })}
-    ${R.length ? "" : `<div class="note-strip"><b>New films and series are being added.</b> Until then, try the demo series and the teasers in our concept showcase below.</div>`}
-    ${rail("Demo series", demos, { sub: "Fictional animated story cards · 3 silent 5-second episodes each · free, no ads" })}
+    ${R.length ? "" : `<div class="note-strip"><b>New films and series are being added.</b> Until then, try the demo series and the concept film teasers above.</div>`}
+    ${many ? rail("Demo series", demos, { sub: "Fictional animated story cards · 3 silent 5-second episodes each · free, no ads" }) : ""}
     ${rail("Coming soon", upcoming, { sub: "Release dates where confirmed" })}
-    ${rail("Concept showcase", concepts, { sub: "Fictional films in development · animated poster teasers, not film footage" })}
+    ${many ? rail("Concept showcase", concepts, { sub: "Fictional films in development · animated poster teasers, not film footage" }) : ""}
     ${S.premium || S.kids?.on ? "" : planStrip(ready)}`;
 }
 // The ₹499 yearly plan, explained with what is actually available today.
