@@ -131,6 +131,16 @@ export function createDemoApi() {
     async allAds() { return wait([...D.ads]); },
     async saveAd(a) { const id = a.id || "ad" + Date.now().toString(36); const i = D.ads.findIndex((x) => x.id === id); if (i >= 0) D.ads[i] = { ...D.ads[i], ...a, id }; else D.ads.push({ ...a, id }); save(); return wait(id); },
     async deleteAd(id) { D.ads = D.ads.filter((a) => a.id !== id); save(); return wait(true); },
+    // Demo AI studio: draws a placeholder picture; video needs the live server.
+    async ai(action, b = {}) {
+      if (action === "aiStatus") return wait({ live: true, cap: 5, usedToday: 0.2, countToday: 2, videoModel: "demo", imageModel: "demo", prices: { videoPerSecond: { "720p": 0.101, "1080p": 0.152 }, image: 0.1, clipSeconds: 10 }, recent: [{ kind: "image", at: Date.now() - 36e5, usd: 0.1, prompt: "Demo poster" }] });
+      if (action === "aiVideo") { await wait(0, 600); throw new Error("Demo mode: AI video needs the live server with GEMINI_API_KEY."); }
+      const [w, h] = { "2:3": [600, 900], "9:16": [540, 960], "16:9": [960, 540], "1:1": [800, 800] }[b.aspect] || [960, 540];
+      const c = document.createElement("canvas"); c.width = w; c.height = h; const x = c.getContext("2d");
+      const g = x.createLinearGradient(0, 0, w, h); g.addColorStop(0, "#1b1530"); g.addColorStop(1, "#c8892b"); x.fillStyle = g; x.fillRect(0, 0, w, h);
+      x.fillStyle = "#fff"; x.font = `bold ${Math.round(w / 14)}px system-ui`; x.fillText("AI DEMO", 30, h / 2); x.font = `${Math.round(w / 34)}px system-ui`; x.fillText(String(b.prompt || "").slice(0, 40), 30, h / 2 + w / 14);
+      await wait(0, 500); const url = c.toDataURL("image/png"); return { mime: "image/png", data: url.split(",")[1] };
+    },
     async grant(email, days) { return wait({ email, until: Date.now() + days * 864e5 }); },
     async stats() { return wait({ premium: premium() ? 1 : 0, titles: Object.keys(D.titles).length, users: D.user ? 1 : 0, billing: "test", video: "test" }); },
     resetDemo() { D = seed(); save(); },

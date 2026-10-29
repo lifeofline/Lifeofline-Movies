@@ -15,6 +15,7 @@ const { initializeApp, cert } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const makeStream = require("./stream.js");
+const makeAI = require("./ai.js");
 const makeBilling = require("./billing.js");
 
 const env = process.env;
@@ -58,6 +59,7 @@ async function sendEmail(uid, subject, lines, cta) {
 }
 
 const stream = makeStream({ db, env });
+const ai = makeAI({ db, env });
 const billing = makeBilling({ db, FieldValue, env, sendEmail, link });
 
 /* ---------- who may play what ---------- */
@@ -164,6 +166,7 @@ async function admin(uid, body) {
   if (!(await db.doc(`admins/${uid}`).get()).exists) throw show("Admins only", 403);
   const { action } = body || {};
   if (action === "upload") return stream.uploadUrl(body);
+  if (ai.actions.includes(action)) return ai.handle(uid, body);
   if (action === "video") return stream.status(String(body.uid || ""));
   if (action === "grant") { // give someone free Premium (cast, crew, testers)
     const days = Math.min(366, Math.max(1, Math.round(Number(body.days) || 30)));
@@ -226,7 +229,7 @@ const server = http.createServer(async (req, res) => {
   const routes = ["/play", "/sub", "/me", "/admin", "/event", "/support", "/pay/webhook"];
   if (req.method !== "POST" || !routes.includes(req.url)) return reply(res, 404, { error: "not found" });
   let raw = "";
-  const cap = req.url === "/pay/webhook" ? 200000 : 5000;
+  const cap = req.url === "/pay/webhook" ? 200000 : req.url === "/admin" ? 12e6 : 5000; // admin: AI reference pictures
   req.on("data", (c) => { raw += c; if (raw.length > cap) req.destroy(); });
   req.on("end", async () => {
     try {

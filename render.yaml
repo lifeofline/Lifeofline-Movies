@@ -45,6 +45,11 @@ services:
         sync: false
       - key: CF_STREAM_CUSTOMER_CODE    # the "customer-xxxx" part of your Stream video links (optional)
         sync: false
+      # Create with AI (Admin → AI studio): Gemini API key. Empty = the AI tab says it isn't set up.
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: AI_DAILY_USD               # spending cap per day in US dollars
+        value: "5"
       # Payments (Razorpay, same Lifeofline Pvt Ltd account as ArtistCart). Empty = test mode.
       - key: RAZORPAY_KEY_ID
         sync: false
