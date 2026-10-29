@@ -6,12 +6,12 @@ import {
   signInWithPopup, signInWithRedirect, sendPasswordResetEmail, sendEmailVerification, signOut, updateProfile,
 } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
 import {
-  getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc, collection, query, where, orderBy, getDocs, serverTimestamp,
+  getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc, collection, query, where, orderBy, getDocs, serverTimestamp, onSnapshot, limit, writeBatch,
 } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 import { loadScript } from "./util.js";
 
 const ms = (v) => (v && typeof v.toMillis === "function" ? v.toMillis() : typeof v === "number" ? v : 0);
-const norm = (snap) => { const d = snap.data() || {}; const o = { id: snap.id, ...d }; for (const k of ["createdAt", "updatedAt", "at"]) if (k in d) o[k] = ms(d[k]); return o; };
+const norm = (snap) => { const d = snap.data() || {}; const o = { id: snap.id, ...d }; for (const k of ["createdAt", "updatedAt", "at", "lastAt"]) if (k in d) o[k] = ms(d[k]); return o; };
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "title";
 const friendly = (e) => {
   const c = e?.code || "";
@@ -125,6 +125,27 @@ export function createFirebaseApi(config, appConfig = {}) {
       await addDoc(collection(db, "grievances"), { name: String(name).slice(0, 80), email: String(email).slice(0, 120), title: String(title || "").slice(0, 120), text: String(text).slice(0, 3000), uid: uid() || "", status: "open", at: serverTimestamp() });
       return true;
     }),
+
+    /* ---------- chat support: the Lifeofline Helpdesk ---------- */
+    watchSupportThread(id, cb) { return onSnapshot(doc(db, "support", id), (s) => cb(s.exists() ? norm(s) : null), () => cb(null)); },
+    watchSupportMsgs(id, cb) { return onSnapshot(query(collection(db, "support", id, "msgs"), orderBy("at"), limit(300)), (s) => cb(s.docs.map(norm)), () => cb([])); },
+    async supportSend(text, transcript, meta = {}) {
+      const id = uid(), ref = doc(db, "support", id); const fresh = !(await getDoc(ref)).exists(); const b = writeBatch(db);
+      b.set(ref, { uid: id, name: meta.name || "", role: meta.premium ? "Premium" : "Free", email: auth.currentUser?.email || "", app: "movies", status: "open", teamUnread: true, userUnread: false, lastText: text.slice(0, 300), lastFrom: id, lastAt: serverTimestamp(), ...(fresh ? { createdAt: serverTimestamp() } : {}) }, { merge: true });
+      if (fresh && transcript) b.set(doc(collection(db, "support", id, "msgs")), { from: id, kind: "transcript", text: ("Before connecting, I asked the helper:\n" + transcript).slice(0, 2000), at: serverTimestamp() });
+      b.set(doc(collection(db, "support", id, "msgs")), { from: id, text: text.slice(0, 2000), at: serverTimestamp() });
+      await b.commit(); call("/support", { id }).catch(() => {});
+    },
+    async supportSeen() { try { await updateDoc(doc(db, "support", uid()), { userUnread: false }); } catch { /* no thread yet */ } },
+    watchSupportThreads(cb) { return onSnapshot(query(collection(db, "support"), orderBy("lastAt", "desc"), limit(100)), (s) => cb(s.docs.map(norm)), () => cb([])); },
+    async supportReply(id, text, name) {
+      const b = writeBatch(db);
+      b.set(doc(collection(db, "support", id, "msgs")), { from: "team", name: name || "", text: text.slice(0, 2000), at: serverTimestamp() });
+      b.update(doc(db, "support", id), { teamUnread: false, userUnread: true, status: "open", lastText: text.slice(0, 300), lastFrom: "team", lastAt: serverTimestamp() });
+      await b.commit(); call("/support", { id }).catch(() => {});
+    },
+    async supportStatus(id, status) { await updateDoc(doc(db, "support", id), { status, teamUnread: false }); },
+    async supportMarkRead(id) { await updateDoc(doc(db, "support", id), { teamUnread: false }).catch(() => {}); },
 
     /* ---------- admin ---------- */
     saveTitle: wrap(async (t) => {

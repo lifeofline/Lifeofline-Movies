@@ -202,10 +202,28 @@ function reply(res, code, body) {
 let lastHourly = 0;
 const hourly = () => { if (Date.now() - lastHourly < 36e5) return; lastHourly = Date.now(); billing.hourly(); };
 
+/* ---------- chat support: alert the Helpdesk, or tell the viewer the Helpdesk replied ---------- */
+async function supportAlert(caller, { id }) {
+  if (typeof id !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(id)) return "bad request";
+  const ref = db.doc(`support/${id}`); const t = (await ref.get()).data(); if (!t) return "not found";
+  const isAdmin = (await db.doc(`admins/${caller}`).get()).exists;
+  if (caller === id && t.lastFrom === id) {
+    if (Date.now() - (t.mailedAt || 0) < 10 * 60e3) return "recently alerted";
+    await ref.update({ mailedAt: Date.now() });
+    const to = String(env.ADMIN_EMAILS || "").split(/[,\s]+/).filter(Boolean);
+    const who = `${t.name || "A viewer"} (${t.role || "viewer"})`;
+    for (const addr of to) await brevo(addr, `HELPDESK CHAT (Movies): ${who}`, `${who} wrote: "${t.lastText}"\n\nReply in Admin → Support: ${link("admin")}`, `<p><b>${esc(who)}</b> wrote in Lifeofline Movies chat support:</p><blockquote>${esc(t.lastText)}</blockquote><p><a href="${esc(link("admin"))}">Reply in Admin → Support</a></p>`).catch(() => {});
+    return "ok";
+  }
+  if (!isAdmin || t.lastFrom !== "team") return "nothing to send";
+  await sendEmail(id, "The Lifeofline Helpdesk replied", [`"${String(t.lastText || "").slice(0, 400)}"`, "Open the help chat in Lifeofline Movies to reply."], { label: "Open the chat", url: link("help-live") });
+  return "ok";
+}
+
 const server = http.createServer(async (req, res) => {
   if (req.method === "OPTIONS") { res.writeHead(204, cors); return res.end(); }
   if (req.method === "GET" && (req.url === "/health" || req.url === "/")) { hourly(); return reply(res, 200, { ok: true, billing: billing.MODE, video: stream.LIVE ? "live" : "test", price: billing.PRICE }); }
-  const routes = ["/play", "/sub", "/me", "/admin", "/event", "/pay/webhook"];
+  const routes = ["/play", "/sub", "/me", "/admin", "/event", "/support", "/pay/webhook"];
   if (req.method !== "POST" || !routes.includes(req.url)) return reply(res, 404, { error: "not found" });
   let raw = "";
   const cap = req.url === "/pay/webhook" ? 200000 : 5000;
@@ -225,6 +243,7 @@ const server = http.createServer(async (req, res) => {
         catch (e) { if (e.show) throw e; console.error("sub", body?.action, e); return reply(res, 400, { error: "Payment step failed: " + (e.message || "unknown error") + ". Try again, or write to us if money was taken." }); }
       }
       if (req.url === "/me") return reply(res, 200, { result: await me(uid, body) });
+      if (req.url === "/support") return reply(res, 200, { result: await supportAlert(uid, body) });
       if (req.url === "/admin") {
         try { return reply(res, 200, { result: await admin(uid, body) }); }
         catch (e) { if (e.show) throw e; console.error("admin", body?.action, e); return reply(res, 400, { error: "Admin action failed: " + (e.message || "unknown error") }); }

@@ -8,12 +8,30 @@ export async function mountAdmin(root, { api, reload }) {
   const A = { tab: "titles", titles: [], editing: null, eps: [], ads: [], busy: false };
 
   async function refresh() { A.titles = await api.allTitles(); render(); }
-  const tabs = [["titles", "Titles"], ["ads", "Ads"], ["gifts", "Free Premium"], ["stats", "Numbers"]];
+  const tabs = [["titles", "Titles"], ["support", "Support"], ["ads", "Ads"], ["gifts", "Free Premium"], ["stats", "Numbers"]];
+  // Support inbox: live chats from the help chat (Lifeofline Helpdesk).
+  const SUP = { threads: null, sel: "", msgs: null, stopAll: null, stop: null };
+  const QUICK = ["Thanks for reaching out! Looking into this now.", "Could you share the title name and what you see on screen?", "Done. Please reopen the app and let us know if anything else is needed.", "We've checked with Razorpay; you'll get an update within one working day."];
+  function supportView() {
+    if (!SUP.stopAll) SUP.stopAll = api.watchSupportThreads((l) => { SUP.threads = l; if (A.tab === "support") $("#abody") && ($("#abody").innerHTML = supportView()); });
+    if (SUP.sel) {
+      const t = (SUP.threads || []).find((x) => x.id === SUP.sel) || {};
+      return `<div class="card sup"><div class="row"><button class="btn ghost sm" data-sback data-nav>‹ All chats</button><span class="spacer"></span><button class="btn ${t.status === "solved" ? "ghost" : "gold"} sm" data-ssolve="${t.status === "solved" ? "open" : "solved"}" data-nav>${t.status === "solved" ? "Reopen" : "Mark solved"}</button></div>
+        <h3>${esc(t.name || "Viewer")} <span class="small">${esc(t.role || "")}${t.email ? " · " + esc(t.email) : ""}</span></h3>
+        <div class="supm" id="supm">${SUP.msgs === null ? `<span class="spin"></span>` : SUP.msgs.map((m) => `<div class="sm ${m.from === "team" ? "t" : "u"}">${m.from === "team" ? `<small>Helpdesk${m.name ? " · " + esc(m.name) : ""}</small>` : ""}${esc(m.text)}</div>`).join("")}</div>
+        <div class="chips">${QUICK.map((q) => `<button class="chip" data-squick="${esc(q)}" data-nav>${esc(q.slice(0, 30))}…</button>`).join("")}</div>
+        <label class="f">Reply<textarea id="supin" maxlength="2000" rows="3" data-nav></textarea></label><button class="btn gold" data-ssend data-nav>Send reply</button>
+        <p class="small">They get an email and see your reply in their chat. Call, WhatsApp and email details are set in ArtistCart Admin → Support.</p></div>`;
+    }
+    const list = SUP.threads;
+    return list === null ? `<div class="card"><span class="spin"></span></div>` : list.length ? `<div class="card">${list.map((x) => `<button class="suprow ${x.teamUnread ? "new" : ""}" data-sopen="${esc(x.id)}" data-nav><b>${x.status === "solved" ? "✅" : x.teamUnread ? "🔴" : "💬"} ${esc(x.name || "Viewer")} · ${esc(x.role || "")}</b><span class="small">${x.lastFrom === "team" ? "You: " : ""}${esc((x.lastText || "").slice(0, 90))}</span></button>`).join("")}</div>`
+      : `<div class="card"><p class="small">No chats yet. When a viewer taps "Chat with us" in the help chat, it shows up here.</p></div>`;
+  }
 
   function render() {
     root.innerHTML = `<div class="ptitle"><div><span class="eyebrow">Admin</span><h1>Lifeofline Movies</h1></div><span>${api.mode === "demo" ? "Demo mode: changes stay in this browser" : ""}</span></div>
       <div class="chips">${tabs.map(([k, l]) => `<button class="chip ${A.tab === k ? "on" : ""}" data-atab="${k}" data-nav>${l}</button>`).join("")}</div>
-      <div id="abody">${A.tab === "titles" ? (A.editing ? editor() : titleList()) : A.tab === "ads" ? adsView() : A.tab === "gifts" ? giftView() : `<div class="card" id="stats"><span class="spin"></span></div>`}</div>`;
+      <div id="abody">${A.tab === "titles" ? (A.editing ? editor() : titleList()) : A.tab === "ads" ? adsView() : A.tab === "support" ? supportView() : A.tab === "gifts" ? giftView() : `<div class="card" id="stats"><span class="spin"></span></div>`}</div>`;
     if (A.tab === "stats") api.stats().then((x) => { const el = $("#stats"); if (el) el.innerHTML = statsHtml(x); }).catch((e) => { const el = $("#stats"); if (el) el.textContent = e.message; });
   }
 
@@ -162,6 +180,11 @@ export async function mountAdmin(root, { api, reload }) {
 
   root.addEventListener("click", async (e) => {
     const b = e.target.closest("button"); if (!b) return;
+    if (b.dataset.sopen != null) { SUP.sel = b.dataset.sopen; SUP.msgs = null; SUP.stop?.(); SUP.stop = api.watchSupportMsgs(SUP.sel, (l) => { SUP.msgs = l; if (A.tab === "support") { $("#abody").innerHTML = supportView(); const m = $("#supm"); if (m) m.scrollTop = m.scrollHeight; } }); api.supportMarkRead(SUP.sel); return render(); }
+    if (b.dataset.sback != null) { SUP.sel = ""; SUP.stop?.(); SUP.stop = null; return render(); }
+    if (b.dataset.squick != null) { const t = $("#supin"); t.value = b.dataset.squick; t.focus(); return; }
+    if (b.dataset.ssolve != null) { await api.supportStatus(SUP.sel, b.dataset.ssolve); toast(b.dataset.ssolve === "solved" ? "Marked solved" : "Reopened"); return; }
+    if (b.dataset.ssend != null) { const t = $("#supin"); const text = t.value.trim(); if (!text) return; b.disabled = true; try { await api.supportReply(SUP.sel, text, "Helpdesk"); t.value = ""; } catch (er) { toast(er.message); } b.disabled = false; return; }
     if (b.dataset.atab) { A.tab = b.dataset.atab; A.editing = null; if (A.tab === "ads") A.ads = await api.allAds(); return render(); }
     if (b.hasAttribute("data-anew")) return openTitle(null);
     if (b.hasAttribute("data-astarter")) {

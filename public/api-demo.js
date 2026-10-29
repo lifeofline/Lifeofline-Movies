@@ -36,12 +36,30 @@ const err = (msg, extra = {}) => Object.assign(new Error(msg), extra);
 const premium = () => !!D.sub && D.sub.until > Date.now() && D.sub.status !== "halted";
 const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "title";
 
+// Demo Helpdesk chat (kept in memory): a simple watcher list so screens update like Firestore does.
+const sup = { threads: {}, msgs: {}, subs: new Set() };
+const supEmit = () => sup.subs.forEach((f) => { try { f(); } catch (e) { console.error(e); } });
+const supWatch = (fn, cb) => { const run = () => cb(fn()); sup.subs.add(run); setTimeout(run, 0); return () => sup.subs.delete(run); };
 export function createDemoApi() {
   const authCbs = new Set();
   const emit = () => authCbs.forEach((cb) => cb(D.user));
 
   const api = {
     mode: "demo",
+    watchSupportThread(id, cb) { return supWatch(() => (sup.threads[id] ? { ...sup.threads[id] } : null), cb); },
+    watchSupportMsgs(id, cb) { return supWatch(() => (sup.msgs[id] || []).map((m) => ({ ...m })), cb); },
+    async supportSend(text, transcript, meta = {}) {
+      const id = D.user?.uid || "demo"; const t = sup.threads[id] = sup.threads[id] || { id, uid: id, createdAt: Date.now() }; const list = sup.msgs[id] = sup.msgs[id] || [];
+      if (!list.length && transcript) list.push({ id: "m" + Date.now(), from: id, kind: "transcript", text: "Before connecting, I asked the helper:\n" + transcript, at: Date.now() });
+      list.push({ id: "m" + Date.now() + 1, from: id, text, at: Date.now() });
+      Object.assign(t, { name: meta.name || "", role: meta.premium ? "Premium" : "Free", status: "open", teamUnread: true, userUnread: false, lastText: text, lastFrom: id, lastAt: Date.now() }); supEmit();
+      setTimeout(() => { list.push({ id: "m" + Date.now() + 2, from: "team", name: "Priya (demo)", text: "Hi! This is the Lifeofline Helpdesk (demo). We've got your message and will help you right away.", at: Date.now() }); Object.assign(t, { userUnread: true, lastText: "Hi! This is the Lifeofline Helpdesk…", lastFrom: "team", lastAt: Date.now() }); supEmit(); }, 1500);
+    },
+    async supportSeen() { const t = sup.threads[D.user?.uid || "demo"]; if (t?.userUnread) { t.userUnread = false; supEmit(); } },
+    watchSupportThreads(cb) { return supWatch(() => Object.values(sup.threads).sort((a, b) => b.lastAt - a.lastAt).map((t) => ({ ...t })), cb); },
+    async supportReply(id, text, name) { (sup.msgs[id] = sup.msgs[id] || []).push({ id: "m" + Date.now(), from: "team", name, text, at: Date.now() }); Object.assign(sup.threads[id], { teamUnread: false, userUnread: true, status: "open", lastText: text, lastFrom: "team", lastAt: Date.now() }); supEmit(); },
+    async supportStatus(id, status) { Object.assign(sup.threads[id], { status, teamUnread: false }); supEmit(); },
+    async supportMarkRead(id) { if (sup.threads[id]) { sup.threads[id].teamUnread = false; supEmit(); } },
     onAuth(cb) { authCbs.add(cb); setTimeout(() => cb(D.user), 0); return () => authCbs.delete(cb); },
     async signUp(name, email) { D.user = { uid: "demo", email, name: name || email.split("@")[0], emailVerified: true }; save(); emit(); return D.user; },
     async signIn(email) { D.user = { uid: "demo", email, name: email.split("@")[0], emailVerified: true }; save(); emit(); return D.user; },

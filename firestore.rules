@@ -48,6 +48,17 @@ service cloud.firestore {
       allow read, update: if isAdmin();
     }
 
+    // Chat support: one thread per viewer with the Lifeofline Helpdesk. The viewer and admins read; admins reply as "team".
+    match /support/{uid} {
+      allow read: if signedIn() && (me() == uid || isAdmin());
+      allow create, update: if signedIn() && (isAdmin() || (me() == uid && request.resource.data.uid == uid && str(request.resource.data.get('lastText', ''), 300)));
+      match /msgs/{mid} {
+        allow read: if signedIn() && (me() == uid || isAdmin());
+        allow create: if signedIn() && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000
+          && ((me() == uid && request.resource.data.from == uid) || (isAdmin() && request.resource.data.from == 'team'));
+      }
+    }
+
     // passOrders, server, adminLog: server only (no access from the app).
   }
 }

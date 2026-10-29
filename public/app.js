@@ -6,10 +6,28 @@ import { STARTER_TITLES, withStarter } from "./starter-titles.js";
 import { DEMO_SERIES, isDemo, demoEpisodes } from "./demo-series.js";
 import { LANGS, KINDS, KIDS_OK, freeEpisode } from "./access.js";
 import { openPlayer } from "./player.js";
+import { createHelp } from "./help-widget.js";
 
 const DEMO = String(firebaseConfig.apiKey || "").startsWith("PASTE");
 const api = DEMO ? (await import("./api-demo.js")).createDemoApi() : (await import("./api-firebase.js")).createFirebaseApi(firebaseConfig, appConfig);
 const PRICE = 499; // Premium is paid once a year
+
+/* ---------- chat support: quick answers, then the Lifeofline Helpdesk ---------- */
+const HELP_FAQS = [
+  { id: "price", q: "How much is Premium?", keys: /\b(premium|price|cost|499|plan|subscri|how much|charge)\w*/, a: `<b>Premium is ₹${PRICE} a year</b> (prices include GST): every available film, series and short drama, no ads, Full HD where available, on phone, computer and TV. There's also a free plan with ads.`, links: [["See plans", "#lh:go:#plans"]], next: ["free", "pay", "cancel"] },
+  { id: "free", q: "What can I watch free?", keys: /\b(free|without pay|no money|ads?|advert)\b/, a: "Titles marked <b>Free</b>, the first episodes of many series and short dramas, and every poster teaser and trailer play free with short ad breaks. Premium removes the ads and unlocks everything.", next: ["price"] },
+  { id: "pay", q: "How can I pay?", keys: /\b(pay|payment|upi|card|netbank|gpay|phonepe|paytm|razorpay|failed|declined|deducted)\w*/, a: "Pay with UPI (GPay, PhonePe, Paytm and others), debit or credit card, or netbanking through Razorpay. If money was deducted but Premium didn't start, wait 10 minutes and reopen the app; if it still hasn't, chat with the Helpdesk and we'll fix it.", next: ["price", "refund"] },
+  { id: "cancel", q: "How do I cancel?", keys: /\b(cancel|stop|unsubscri|autopay|mandate|renew)\w*/, a: "Open <b>Account → Plan → Cancel renewal</b>. No more charges are made and Premium keeps working until the end of the period you paid for. You can also cancel the UPI Autopay mandate in your UPI app.", links: [["Open Account", "#lh:go:#account"]], next: ["refund"] },
+  { id: "refund", q: "Refunds", keys: /\b(refund|money back|charged twice|double|wrong charge|by mistake)\w*/, a: "A Premium period that has started isn't refunded. <b>Charged twice, after cancelling or by mistake?</b> Tell us within 30 days and we refund the extra payment in full. Refunds reach your bank in 5–7 working days.", links: [["Refund policy", "refund.html"]], next: ["pay"] },
+  { id: "tv", q: "Watch on my TV", keys: /\b(tv|television|fire ?tv|android tv|google tv|smart tv|chromecast|cast|big screen)\w*/, a: "Open <b>movies.lifeofline.com</b> in the browser of your Android TV, Google TV or Fire TV and sign in. It switches to a TV layout you can use with the remote. Store apps for TV and phones are coming.", next: ["devices"] },
+  { id: "devices", q: "Which devices work?", keys: /\b(device|phone|iphone|android|laptop|computer|screen|install|app|download|household|share)\w*/, a: "Android phones and iPhones (in the browser, or add it to your home screen), computers and smart TVs with a browser. Sign in with the same account everywhere and Continue watching follows you. Premium is for you and your household.", next: ["tv", "play"] },
+  { id: "play", q: "Video isn't playing", keys: /\b(not play|won.?t play|buffer|loading|stuck|error|black screen|no sound|lag|slow|quality)\w*/, a: "Try: 1) check your internet, 2) pick a lower quality from the ⚙ menu in the player, 3) reload the page, 4) update your browser. Still stuck? Tap <b>Report a problem</b> in the player or chat with the Helpdesk with the title name.", next: ["devices"] },
+  { id: "age", q: "Age ratings and Kids mode", keys: /\b(kid|child|age|rated|rating|adult|18|pin|parental)\w*/, a: "Every title shows its age rating (U, U/A 7+, 13+, 16+, A). To watch A-rated titles, add your date of birth in Account. <b>Kids mode</b> (Account) shows only U and U/A 7+ titles and needs a 4-digit PIN to leave.", links: [["Open Account", "#lh:go:#account"]], next: ["account"] },
+  { id: "account", q: "Sign in or password help", keys: /\b(sign ?in|login|log in|password|forgot|account|email|verify)\w*/, a: "Use <b>Sign in</b> with your email and password, or Google. Forgot it? Tap <b>Forgot password</b> on the sign-in screen and check your email (and spam). A free account keeps your place in every title and saves My List.", links: [["Sign in", "#lh:go:#signin"]], next: ["price"] },
+  { id: "new", q: "What's new and coming soon?", keys: /\b(new|coming|release|when|upcoming|concept|request|add a (movie|film|show))\w*/, a: "New films and series are added regularly; titles marked <b>Coming soon</b> show their release date, and the Concept showcase shows films in development. Add titles to My List to find them on release. Want a film added? Tell the Helpdesk.", next: ["free"] },
+  { id: "complaint", q: "Complaint about a title", keys: /\b(complain|grievance|offensive|objection|copyright|report (a )?title)\w*/, a: "Use the <b>Grievance form</b>: we reply within 24 hours and resolve within 15 days, as required by the IT Rules 2021.", links: [["Grievance form", "#lh:go:#grievance"]], next: ["account"] },
+];
+const HELP_STARTERS = ["price", "free", "cancel", "tv", "play", "pay"];
 
 /* ---------- state ---------- */
 const store = {
@@ -438,7 +456,8 @@ function vAccount() {
       ${S.kids?.on ? `<button class="btn ghost" data-kidsoff data-nav>Leave Kids mode</button>` : `<label class="f">Choose a 4-digit PIN<input id="kpin" inputmode="numeric" maxlength="4" pattern="\\d{4}" autocomplete="off" data-nav></label><button class="btn ghost" data-kidson data-nav>Turn on Kids mode</button>`}</div>
     <div class="card"><h3>This device</h3><div class="kv"><span>TV layout</span><span>${S.tv ? "On" : "Off"}</span></div>
       <p class="small">Big tiles and remote-control arrows. Turns on by itself on Android TV, Fire TV and smart TVs.</p><button class="btn ghost" data-tvtog data-nav>${S.tv ? "Turn off" : "Turn on"} TV layout</button></div>
-    <div class="card"><h3>Help</h3><p class="small">Questions, complaints about a title or a payment problem: we reply within 24 hours and resolve within 15 days.</p>
+    <div class="card"><h3>Help</h3><p class="small">Quick answers any time, or chat, call or WhatsApp the Lifeofline Helpdesk (9 AM – 9 PM, every day). Complaints about a title: we reply within 24 hours and resolve within 15 days.</p>
+      <a class="btn gold" href="#help" data-nav>💬 Chat support</a>
       <a class="btn ghost" href="#grievance" data-nav>Contact the grievance officer</a>
       ${S.admin ? `<a class="btn gold" href="#admin" data-nav>Open Admin</a>` : S.user ? `<button class="link small" data-claim>I'm on the admin list</button>` : ""}</div>
   </div>`;
@@ -463,6 +482,7 @@ async function route() {
   const seq = ++renderSeq;
   const h = decodeURIComponent((location.hash || "#home").slice(1));
   const [r, arg] = h.split("/");
+  if (r === "help" || r === "help-live") { location.replace("#home"); setTimeout(() => (r === "help-live" && S.user ? help.goLive() : help.open()), 300); return; }
   let html = "", tab = r;
   if (r === "t") { html = await vTitle(arg); tab = ""; }
   else if (r === "reels") html = vReels();
@@ -708,6 +728,27 @@ document.addEventListener("keydown", (e) => {
 /* ---------- start ---------- */
 if ("serviceWorker" in navigator && !DEMO && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
 shell("home");
+// Chat support: the helper answers right away; "Chat with us" reaches the Lifeofline Helpdesk (shared with ArtistCart).
+const HELPDESK = { email: appConfig.supportEmail || "ibmhclms@gmail.com" };
+const help = createHelp({
+  brand: "Lifeofline Movies", accent: "#f4ad3d", accentInk: "#2a1a02", ink: "#2a2237", faqs: HELP_FAQS, starters: HELP_STARTERS, hours: { from: 9, to: 21 },
+  theme: { surface: "var(--ink-2)", text: "var(--fg)", bg: "var(--ink)", line: "var(--line)", muted: "var(--muted)" },
+  contact: () => HELPDESK, user: () => (S.user ? { uid: S.user.uid, name: S.user.name } : null),
+  live: {
+    watch: (cb) => api.watchSupportMsgs(S.user.uid, (l) => cb(l.map((m) => ({ from: m.from === S.user.uid ? "me" : m.from, name: m.name || "", text: m.kind === "transcript" ? "📋 " + m.text : m.text })))),
+    send: (text, transcript) => api.supportSend(text, transcript, { name: S.user?.name || "", premium: S.premium }),
+    seen: () => api.supportSeen(),
+  },
+  signIn: () => { location.hash = "#signin"; },
+  bottom: () => (getComputedStyle($("#tabbar") || document.body).display !== "none" && $("#tabbar")?.offsetHeight ? $("#tabbar").offsetHeight + 12 : 16),
+  hidden: () => !!history.state?.player || location.hash.startsWith("#admin") || S.tv,
+});
+window.__help = help;
+// The Helpdesk number and email are set once in ArtistCart Admin → Support and used by both apps.
+fetch("https://firestore.googleapis.com/v1/projects/aaj-ke-kalakaar/databases/(default)/documents/config/support").then((r) => (r.ok ? r.json() : null)).then((d) => {
+  const f = d?.fields || {}; for (const k of ["phone", "whatsapp", "email"]) if (f[k]?.stringValue) HELPDESK[k] = f[k].stringValue; help.refresh();
+}).catch(() => {});
+let helpStop = null;
 await loadCatalogue();
 S.ready = true;
 route();
@@ -723,6 +764,7 @@ async function addStarterTitles({ force = false } = {}) {
 window.__addStarterTitles = addStarterTitles;
 
 api.onAuth(async (u) => {
+  help.reset(); help.setUnread(0); helpStop?.(); helpStop = u ? api.watchSupportThread(u.uid, (t) => help.setUnread(t?.userUnread ? 1 : 0)) : null;
   S.user = u;
   await loadMine();
   if (S.admin) addStarterTitles().then((n) => { if (n) { toast(`Added ${n} Lifeofline films as “Coming soon”.`, 4000); route(); } }).catch((e) => console.warn("starter titles", e));
