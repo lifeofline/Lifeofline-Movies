@@ -225,7 +225,7 @@ async function supportAlert(caller, { id }) {
 
 const server = http.createServer(async (req, res) => {
   if (req.method === "OPTIONS") { res.writeHead(204, cors); return res.end(); }
-  if (req.method === "GET" && (req.url === "/health" || req.url === "/")) { hourly(); return reply(res, 200, { ok: true, billing: billing.MODE, video: stream.LIVE ? "live" : "test", price: billing.PRICE }); }
+  if (req.method === "GET" && (req.url === "/health" || req.url === "/")) { hourly(); return reply(res, 200, { ok: true, billing: billing.MODE, video: stream.LIVE ? "live" : "test", ai: ai.LIVE ? "on" : "off", price: billing.PRICE }); }
   const routes = ["/play", "/sub", "/me", "/admin", "/event", "/support", "/pay/webhook"];
   if (req.method !== "POST" || !routes.includes(req.url)) return reply(res, 404, { error: "not found" });
   let raw = "";
