@@ -201,7 +201,7 @@ export async function mountAdmin(root, { api, reload }) {
         <input class="epname" value="${esc(e.name || "")}" aria-label="Episode name" maxlength="80" data-nav>
         <select class="epfree" aria-label="Who can watch" data-nav><option value="" ${e.free == null ? "selected" : ""}>Default rule</option><option value="free" ${e.free === true ? "selected" : ""}>Free for everyone</option><option value="prem" ${e.free === false ? "selected" : ""}>Premium only</option></select>
         <span class="small vstat">${e.videoUid ? (e.duration ? "Ready · " + dur(e.duration) : "Processing…") : "No video"}</span>
-        ${e.videoUid ? "" : `<input type="file" class="epfile" accept="video/*" aria-label="Video for this episode" data-nav><button class="btn sm gold" data-epup data-nav>Upload</button><div class="bar" id="epbar_${esc(e.id)}" hidden><i></i></div>`}
+        <input type="file" class="epfile" accept="video/*" aria-label="${e.videoUid ? "New video for this episode" : "Video for this episode"}" data-nav><button class="btn sm ${e.videoUid ? "ghost" : "gold"}" data-epup data-nav>${e.videoUid ? "Replace video" : "Upload"}</button><div class="bar" id="epbar_${esc(e.id)}" hidden><i></i></div>
         <button class="btn sm ghost" data-epsave data-nav>Save</button><button class="btn sm ghost" data-epcheck data-nav>Check video</button><button class="btn sm ghost danger" data-epdel data-nav>Delete</button>
       </div>`).join("") || `<p class="small">No ${movie ? "video" : "episodes"} yet.</p>`}
       ${movie && A.eps.length ? "" : `<div class="aep new"><span class="n">${String((A.eps.at(-1)?.n || 0) + 1).padStart(2, "0")}</span>
@@ -327,7 +327,8 @@ export async function mountAdmin(root, { api, reload }) {
       b.disabled = true; A.busy = true;
       try {
         const uid = await api.uploadVideo(file, progressBar("epbar_" + row.dataset.epid));
-        await api.saveEpisode(A.editing.id, { id: row.dataset.epid, videoUid: uid, duration: 0 });
+        // A replaced video gets a fresh preview clip and is locked down again on its first play.
+        await api.saveEpisode(A.editing.id, { id: row.dataset.epid, videoUid: uid, duration: 0, previewUid: "", previewSec: 0, protectedAt: 0 });
         toast("Uploaded. Cloudflare is preparing it."); A.eps = await api.episodes(A.editing.id); render();
       } catch (er) { toast(er.message, 6000); b.disabled = false; } finally { A.busy = false; }
       return;
