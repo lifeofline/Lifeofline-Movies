@@ -8,11 +8,15 @@ const crypto = require("crypto");
 
 const SAMPLE_HLS = "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"; // public test stream used in test mode
 const LINK_HOURS = 6;
+// Videos only play on our own site: Cloudflare refuses requests coming from any other web page.
+// STREAM_ORIGINS on Render can change the list ("off" turns the lock off).
+const DEFAULT_ORIGINS = ["movies.lifeofline.com", "lifeofline-movies.onrender.com"];
 
 module.exports = function makeStream({ db, env }) {
   const clean = (v) => String(v || "").trim().replace(/^["']|["']$/g, ""); // pasted values often carry spaces or quotes
   const ACC = clean(env.CF_ACCOUNT_ID), TOKEN = clean(env.CF_STREAM_TOKEN), CODE = clean(env.CF_STREAM_CUSTOMER_CODE).replace(/^customer-/, "").replace(/\.cloudflarestream\.com.*$/, "");
   const LIVE = !!(ACC && TOKEN);
+  const ORIGINS = clean(env.STREAM_ORIGINS).toLowerCase() === "off" ? [] : clean(env.STREAM_ORIGINS) ? clean(env.STREAM_ORIGINS).split(/[,\s]+/).filter(Boolean) : DEFAULT_ORIGINS;
   const HOST = CODE ? `https://customer-${CODE}.cloudflarestream.com` : "https://videodelivery.net";
   const api = `https://api.cloudflare.com/client/v4/accounts/${ACC}/stream`;
   const show = (msg, code = 400) => Object.assign(new Error(msg), { show: true, status: code });
@@ -72,7 +76,7 @@ module.exports = function makeStream({ db, env }) {
     size = Math.round(Number(size) || 0);
     if (size <= 0 || size > 30 * 1024 ** 3) throw show("Pick a video file under 30 GB.");
     if (!LIVE) return { test: true, uid: "test_" + crypto.randomBytes(6).toString("hex") };
-    const meta = [`name ${b64(String(name || "video").slice(0, 120))}`, "requiresignedurls", `maxdurationseconds ${b64(6 * 3600)}`].join(",");
+    const meta = [`name ${b64(String(name || "video").slice(0, 120))}`, "requiresignedurls", `maxdurationseconds ${b64(6 * 3600)}`, ...(ORIGINS.length ? [`allowedorigins ${b64(ORIGINS.join(","))}`] : [])].join(",");
     const res = await net(`${api}?direct_user=true`, { method: "POST", headers: { Authorization: `Bearer ${TOKEN}`, "Tus-Resumable": "1.0.0", "Upload-Length": String(size), "Upload-Metadata": meta } });
     if (res.status !== 201) { const text = await res.text().catch(() => ""); console.error("Cloudflare tus", res.status, text.slice(0, 500)); throw why(res.status, text); }
     const uploadUrl = res.headers.get("location"), uid = res.headers.get("stream-media-id");
@@ -88,5 +92,20 @@ module.exports = function makeStream({ db, env }) {
     return { ready: !!v.readyToStream, duration: Math.round(v.duration || 0), state: v.status?.state || "", pct: Number(v.status?.pctComplete || 0) };
   }
 
-  return { LIVE, playUrl, uploadUrl, status, sign, SAMPLE_HLS };
+  // Locks a video: signed links only, and only playable from our own site. Safe to call again.
+  async function protect(uid) {
+    if (!LIVE || String(uid).startsWith("test_")) return true;
+    await cf("POST", "/" + uid, { uid, requireSignedURLs: true, allowedOrigins: ORIGINS });
+    return true;
+  }
+
+  // Makes a separate short preview video (the first `secs` seconds). Viewers without the plan only ever get a link
+  // to this clip, never to the full video, so the paywall can't be skipped by changing the time or the link.
+  async function previewClip(uid, secs) {
+    if (!LIVE || String(uid).startsWith("test_")) return uid;
+    const r = await cf("POST", "/clip", { clippedFromVideoUID: uid, startTimeSeconds: 0, endTimeSeconds: secs, requireSignedURLs: true, allowedOrigins: ORIGINS });
+    return r.uid;
+  }
+
+  return { LIVE, playUrl, uploadUrl, status, sign, protect, previewClip, SAMPLE_HLS };
 };

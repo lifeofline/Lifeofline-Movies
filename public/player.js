@@ -34,7 +34,9 @@ export async function openPlayer(opts) {
   const ov = document.createElement("div");
   ov.className = "pov"; ov.setAttribute("role", "dialog"); ov.setAttribute("aria-label", "Player: " + title.title);
   ov.innerHTML = `<div class="pstage ${vertical ? "v" : ""}" id="pstage">
-      <video id="pv" playsinline webkit-playsinline preload="auto"></video>
+      <video id="pv" playsinline webkit-playsinline preload="auto" controlslist="nodownload noremoteplayback noplaybackrate" disablepictureinpicture disableremoteplayback></video>
+      <div class="pwm" id="pwm" aria-hidden="true"></div>
+      <div class="ppv" id="ppv" hidden></div>
       <div class="plyr" id="plyr"></div>
       <div class="ptop"><button class="pic" data-pclose aria-label="Close">✕</button><b id="pname">${esc(title.title)}</b><span class="rating" id="prate">${esc(title.rating || "U")}</span></div>
       <div class="pbot" id="pbot">
@@ -85,6 +87,10 @@ async function start(P, epId, trailer, startAt) {
   $("#pname", P.ov).textContent = trailer ? `${P.title.title} · ${P.direct ? "Animated poster teaser" : "Trailer"}` : P.title.kind === "movie" ? P.title.title : `${P.title.title} · Ep ${r.n}${P.title.demo ? " · Demo story card" : ""}`;
   const nx = nextEp(P); $("#pnext", P.ov).hidden = !nx;
   if (r.poster) P.video.poster = r.poster;
+  // Viewer watermark (moves around) and the preview badge.
+  const wm = $("#pwm", P.ov); wm.textContent = r.mark || ""; clearInterval(P.wmT);
+  if (r.mark) { const hop = () => { wm.style.left = 8 + Math.random() * 55 + "%"; wm.style.top = 10 + Math.random() * 75 + "%"; }; hop(); P.wmT = setInterval(hop, 12000); }
+  const pv = $("#ppv", P.ov); pv.hidden = !r.preview; pv.textContent = r.preview ? `Free preview · ${r.preview} seconds` : "";
 
   P.started = false; P.netRetries = 0;
   await attach(P, r.hls).catch((e) => errCard(P, "This video didn't load.", e.message, "attach"));
@@ -170,7 +176,7 @@ function prevEp(P) {
   return i > 0 ? P.episodes[i - 1] : null;
 }
 function save(P) {
-  if (!P.ep || P.trailer) return;
+  if (!P.ep || P.trailer || P.res?.preview) return;
   const v = P.video; if (!v.duration || !isFinite(v.duration)) return;
   P.api.saveProgress(P.title.id, { epId: P.ep.id, n: P.ep.n || 1, pos: Math.floor(v.currentTime), dur: Math.floor(v.duration) });
 }
@@ -178,7 +184,7 @@ function goNext(P, ep) {
   if (!ep) return;
   save(P);
   // Locked episodes show the plan card inside the player instead of a failed request.
-  if (!freeEpisode(P.title, ep) && !P.res?.premium) { P.video.pause(); P.ep = ep; return layer(P, `<div class="pcard"><span class="eyebrow">Episode ${ep.n} is locked</span><h3>Keep watching ${esc(P.title.title)}</h3><p>All episodes, no ads, for ₹499 a year.</p><button class="btn gold" data-pplan>See the ₹499 yearly plan</button></div>`); }
+  if (!freeEpisode(P.title, ep) && !P.res?.premium && !P.title.previewSec) { P.video.pause(); P.ep = ep; return layer(P, `<div class="pcard"><span class="eyebrow">Episode ${ep.n} is locked</span><h3>Keep watching ${esc(P.title.title)}</h3><p>All episodes, no ads, for ₹499 a year.</p><button class="btn gold" data-pplan>See the ₹499 yearly plan</button></div>`); }
   P.video.pause();
   start(P, ep.id, false, 0);
 }
@@ -215,6 +221,7 @@ function wire(P) {
   });
   v.addEventListener("progress", () => { try { const d = v.duration; if (d && v.buffered.length) buf.style.width = (v.buffered.end(v.buffered.length - 1) / d) * 100 + "%"; } catch { /* ignore */ } });
   v.addEventListener("ended", () => {
+    if (P.res?.preview) return layer(P, `<div class="pcard"><span class="eyebrow">Preview ended</span><h3>Keep watching ${esc(P.title.title)}</h3><p>Unlock every episode, with no ads, for ₹499 a year.</p><div class="row"><button class="btn gold" data-pplan>Unlock with the ₹499 yearly plan</button><button class="btn ghost" data-pclose>Close</button></div></div>`);
     save(P);
     if (!P.trailer && !P.completed) { P.completed = true; track(P, "complete"); }
     const nx = nextEp(P);
@@ -226,6 +233,7 @@ function wire(P) {
   const seekTo = (x) => { const r = bar.getBoundingClientRect(); if (v.duration) v.currentTime = Math.max(0, Math.min(v.duration - 1, ((x - r.left) / r.width) * v.duration)); };
   bar.addEventListener("click", (e) => seekTo(e.clientX));
   $("#pq", ov).addEventListener("change", (e) => { if (P.hls) P.hls.currentLevel = Number(e.target.value); });
+  ["contextmenu", "dragstart", "copy"].forEach((t) => ov.addEventListener(t, (e) => e.preventDefault()));
   ov.addEventListener("mousemove", wake); ov.addEventListener("touchstart", wake, { passive: true });
 
   ov.addEventListener("click", (e) => {
@@ -261,6 +269,7 @@ function wire(P) {
 
   P.onKey = (e) => {
     if (e.target.closest?.("select")) return;
+    if ((e.ctrlKey || e.metaKey) && /^[spu]$/i.test(e.key)) { e.preventDefault(); return; } // save page, print, view source
     wake();
     if (e.key === "Escape" || e.key === "Backspace" || e.key === "BrowserBack" || e.key === "GoBack") { e.preventDefault(); return closePlayer(); }
     if (P.phase !== "play") return;
@@ -280,7 +289,7 @@ function teardown(fromCode) {
   const P = current; if (!P) return;
   P.destroyed = true; current = null;
   save(P);
-  clearInterval(P.countT); clearTimeout(P.idleT); clearTimeout(P.startT);
+  clearInterval(P.countT); clearInterval(P.wmT); clearTimeout(P.idleT); clearTimeout(P.startT);
   document.removeEventListener("keydown", P.onKey);
   window.removeEventListener("popstate", P.onPop);
   try { P.video.pause(); P.hls?.destroy(); P.video.removeAttribute("src"); P.video.load(); } catch { /* ignore */ }

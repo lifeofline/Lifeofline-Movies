@@ -1,7 +1,7 @@
 // Ghalib Zinda Hai — Season 1: the 72 famous ghazals, one per episode, in the order of the production plan.
 // Mirza Ghalib (from his 1860s photograph, animated with AI) recites each ghazal and explains it in his own voice.
 // Admin → Titles → "Set up Ghalib Zinda Hai" writes this title and its episodes to the catalogue (videos are uploaded per episode later).
-// E01–E05 are free for everyone; the rest are in Premium. An episode without a video shows as "coming soon".
+// Every episode is in Premium; viewers without the plan get a 30-second preview, then the payment screen. An episode without a video shows as "coming soon".
 export const GHALIB_ID = "ghalib-zinda-hai";
 export const GHALIB_TITLE = {
   id: GHALIB_ID, title: "Ghalib Zinda Hai", kind: "series", format: "v", lang: "Hindi", rating: "U",
@@ -9,7 +9,7 @@ export const GHALIB_TITLE = {
   desc: "Mirza Ghalib recites his greatest ghazals and tells you what they mean.",
   synopsis: "Delhi's greatest poet comes alive from his only photograph. In every episode Mirza Ghalib introduces one ghazal — when he wrote it and how old he was — recites each sher, and explains it plainly, the way he wrote his letters. Season 1 has his 72 most-loved ghazals, from “Dil-e-Nadan” to “Hazaron Khwahishen”. The explanations are imagined, in the spirit of his letters; the verses are his.",
   cast: ["Mirza Ghalib (animated from his 1860s photograph)"], director: "Lifeofline Originals", year: "2026",
-  premium: true, freeEps: 5, original: true, published: true, comingSoon: true, season: 1, order: 1,
+  premium: true, freeEps: 0, previewSec: 30, original: true, published: true, comingSoon: true, season: 1, order: 1,
   poster: "posters/ghalib-zinda-hai.jpg", banner: "posters/ghalib-zinda-hai-banner.jpg",
   descriptor: "Classical poetry; mentions of wine and death",
 };

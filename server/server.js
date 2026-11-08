@@ -106,8 +106,25 @@ async function play(uid, { titleId, epId, trailer }) {
     : (await db.collection(`titles/${titleId}/episodes`).orderBy("n").limit(1).get()).docs[0];
   const ep = eSnap?.data();
   if (!ep || !ep.videoUid) throw show("This episode isn't uploaded yet.", 404);
-  if (!freeEpisode(t, ep) && !premium && !admin) throw show(`This is in the ₹${billing.PRICE} Premium plan.`, 402, { needPlan: true });
-  return { ...base, ads: base.ads && !admin, epId: eSnap.id, n: ep.n, name: ep.name || "", duration: ep.duration || 0, ...(await stream.playUrl(ep.videoUid)) };
+  // Lock the video down the first time it's played (signed links only, our site only).
+  if (!ep.protectedAt) { await stream.protect(ep.videoUid).then(() => eSnap.ref.set({ protectedAt: Date.now() }, { merge: true })).catch((e) => console.error("protect", e.message)); }
+  // Who is watching: shown faintly over the video, so a screen recording can be traced back to the account.
+  const mark = uid ? await auth.getUser(uid).then((u) => u.email || u.phoneNumber || uid.slice(0, 8)).catch(() => "") : "";
+  const info = { ...base, ads: base.ads && !admin, epId: eSnap.id, n: ep.n, name: ep.name || "", duration: ep.duration || 0, mark };
+  if (!freeEpisode(t, ep) && !premium && !admin) {
+    const secs = Math.round(Number(t.previewSec) || 0);
+    if (!secs) throw show(`This is in the ₹${billing.PRICE} Premium plan.`, 402, { needPlan: true });
+    // A free preview: a separate short clip, made once per episode. The full video's link never leaves the server.
+    let pv = ep.previewSec === secs ? ep.previewUid : "";
+    if (!pv) {
+      pv = await stream.previewClip(ep.videoUid, secs).catch((e) => { console.error("preview clip", e.message); return ""; });
+      if (pv) await eSnap.ref.set({ previewUid: pv, previewSec: secs }, { merge: true });
+    }
+    const ready = pv && (await stream.status(pv).then((x) => x.ready).catch(() => false));
+    if (!ready) throw show(`This is in the ₹${billing.PRICE} Premium plan.`, 402, { needPlan: true });
+    return { ...info, preview: secs, ...(await stream.playUrl(pv)) };
+  }
+  return { ...info, ...(await stream.playUrl(ep.videoUid)) };
 }
 
 /* ---------- the signed-in person ---------- */

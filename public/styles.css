@@ -375,3 +375,8 @@ html { overflow-x: clip; }
 .btnrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
 .airec{padding:6px 0;border-top:1px solid var(--line);overflow-wrap:anywhere}
 .aist{display:grid;gap:4px}
+
+/* Player protection: viewer watermark and the free-preview badge. */
+.pov, .pov * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.pwm { position: absolute; z-index: 3; pointer-events: none; font: 600 13px/1 system-ui, sans-serif; color: rgba(255,255,255,.22); text-shadow: 0 0 2px rgba(0,0,0,.35); white-space: nowrap; transition: left 2s ease, top 2s ease; }
+.ppv { position: absolute; z-index: 4; top: 56px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.6); color: #ffb840; font: 600 12px/1 system-ui, sans-serif; padding: 7px 12px; border-radius: 99px; pointer-events: none; }

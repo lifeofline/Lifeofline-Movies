@@ -383,7 +383,7 @@ async function vTitle(id) {
           <span class="n">${String(e.n).padStart(2, "0")}</span>
           <span class="thumb" style="${e.thumb ? `background:#000 url('${String(e.thumb).replace(/'/g, "%27")}') center/cover` : posterStyle(t)}"></span>
           <span class="info"><b>${esc(e.name || "Episode " + e.n)}</b>${e.desc ? `<em>${esc(e.desc)}</em>` : ""}<span>${esc(dur(e.duration))}${done ? " · watched" : ep ? " · watching" : ""}</span></span>
-          ${demo ? `<span class="free">Demo</span>` : locked(e) ? `<span class="lock">₹${PRICE} plan</span>` : !S.premium ? `<span class="free">Free · ads</span>` : ""}</button>`;
+          ${demo ? `<span class="free">Demo</span>` : locked(e) ? `<span class="lock">${t.previewSec ? `${t.previewSec}s free · ` : ""}₹${PRICE} plan</span>` : !S.premium ? `<span class="free">Free · ads</span>` : ""}</button>`;
       }).join("")}</div>` : ""}
     </div></div>
     ${like.length ? `<section class="rail"><div class="rail-h"><h2>More like this</h2></div><div class="grid">${like.map((x) => tile(x, "tall")).join("")}</div></section>` : ""}`;

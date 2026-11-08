@@ -177,6 +177,7 @@ export async function mountAdmin(root, { api, reload }) {
           <label class="f">Banner image for the top of Home (16:9 wide, no text near the left side)${t.banner ? " · uploaded" : ""}<input type="file" id="f_banner" accept="image/*" data-nav></label>
           <label class="check"><input type="checkbox" id="f_premium" ${t.premium !== false ? "checked" : ""} data-nav> In the ₹499 yearly Premium plan</label>
           <label class="f">Free episodes for free users (blank = default: short dramas 3, series 1, movies 0)<input id="f_freeEps" inputmode="numeric" maxlength="2" value="${t.freeEps ?? ""}" data-nav></label>
+          <label class="f">Free preview for locked episodes, in seconds (blank = none; e.g. 30)<input id="f_previewSec" inputmode="numeric" maxlength="3" value="${t.previewSec ?? ""}" data-nav></label>
           <label class="check"><input type="checkbox" id="f_original" ${t.original ? "checked" : ""} data-nav> Lifeofline Original</label>
           <label class="f">Order on the home screen (lower shows first)<input id="f_order" inputmode="numeric" value="${t.order ?? ""}" data-nav></label>
           <label class="check"><input type="checkbox" id="f_published" ${t.published ? "checked" : ""} data-nav> Published (visible in the app)</label>
@@ -263,7 +264,7 @@ export async function mountAdmin(root, { api, reload }) {
       year: v("year"), premium: $("#f_premium").checked, original: $("#f_original").checked, published: $("#f_published").checked,
       comingSoon: $("#f_soon").checked, concept: $("#f_concept").checked,
       synopsis: v("synopsis"), director: v("director"), releaseDate: v("release"), audio: v("audio"), subtitles: v("subs"), banner: t.banner || "",
-      freeEps: num(v("freeEps")), order: num(v("order")) ?? 99, poster: t.poster || "", trailerUid: t.trailerUid || "", hue: t.hue || hues(v("title")),
+      freeEps: num(v("freeEps")), previewSec: Math.min(300, num(v("previewSec")) || 0), order: num(v("order")) ?? 99, poster: t.poster || "", trailerUid: t.trailerUid || "", hue: t.hue || hues(v("title")),
     };
   }
 
