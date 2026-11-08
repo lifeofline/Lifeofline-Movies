@@ -9,7 +9,7 @@ export async function mountAdmin(root, { api, reload }) {
   const A = { tab: "titles", titles: [], editing: null, eps: [], ads: [], busy: false };
 
   async function refresh() { A.titles = await api.allTitles(); render(); }
-  const tabs = [["titles", "Titles"], ["ai", "✨ AI studio"], ["support", "Support"], ["ads", "Ads"], ["gifts", "Free Premium"], ["stats", "Numbers"]];
+  const tabs = [["titles", "Titles"], ["ai", "✨ AI studio"], ["support", "Support"], ["ads", "Ads"], ["gifts", "Free Premium"], ["stats", "Numbers"], ["team", "Admins"]];
   // AI studio: make a short clip or a picture with Google's AI, preview it, then use it as a trailer, poster or banner.
   const AI = { kind: "video", st: null, stErr: "", busy: false, out: null, err: "", pic: null, prompt: "", aspect: "16:9", res: "720p", shape: "2:3" };
   const AI_IDEAS = {
@@ -108,7 +108,8 @@ export async function mountAdmin(root, { api, reload }) {
   function render() {
     root.innerHTML = `<div class="ptitle"><div><span class="eyebrow">Admin</span><h1>Lifeofline Movies</h1></div><span>${api.mode === "demo" ? "Demo mode: changes stay in this browser" : ""}</span></div>
       <div class="chips">${tabs.map(([k, l]) => `<button class="chip ${A.tab === k ? "on" : ""}" data-atab="${k}" data-nav>${l}</button>`).join("")}</div>
-      <div id="abody">${A.tab === "titles" ? (A.editing ? editor() : titleList()) : A.tab === "ads" ? adsView() : A.tab === "support" ? supportView() : A.tab === "ai" ? aiView() : A.tab === "gifts" ? giftView() : `<div class="card" id="stats"><span class="spin"></span></div>`}</div>`;
+      <div id="abody">${A.tab === "titles" ? (A.editing ? editor() : titleList()) : A.tab === "ads" ? adsView() : A.tab === "support" ? supportView() : A.tab === "ai" ? aiView() : A.tab === "gifts" ? giftView() : A.tab === "team" ? teamView() : `<div class="card" id="stats"><span class="spin"></span></div>`}</div>`;
+    if (A.tab === "team") api.listAdmins().then((x) => { A.team = x; const el = $("#teamlist"); if (el) el.innerHTML = teamRows(); }).catch((e) => { const el = $("#teamlist"); if (el) el.textContent = e.message; });
     if (A.tab === "stats") api.stats().then((x) => { const el = $("#stats"); if (el) el.innerHTML = statsHtml(x); }).catch((e) => { const el = $("#stats"); if (el) el.textContent = e.message; });
   }
 
@@ -230,6 +231,16 @@ export async function mountAdmin(root, { api, reload }) {
       <p class="err" id="gerr2" hidden></p><button class="btn gold" type="submit" data-nav>Give Premium</button></form>`;
   }
 
+  function teamRows() {
+    return (A.team || []).map((a) => `<div class="kv"><span>${esc(a.email)}${a.owner ? ` <span class="small">· owner</span>` : ""}${a.you ? ` <span class="small">· you</span>` : ""}</span>
+      <span>${a.active ? `<span class="ok">Admin</span>` : `<span class="small">Becomes admin on first sign-in</span>`} ${a.owner || a.you ? "" : `<button class="btn sm ghost danger" data-tdel="${esc(a.email)}" data-nav>Remove</button>`}</span></div>`).join("") || `<p class="small">No admins.</p>`;
+  }
+  function teamView() {
+    return `<div class="card"><h3>Admins</h3><p class="small">Admins see the Admin tab and can change everything here. Nobody else sees any admin option.</p><div id="teamlist"><span class="spin"></span></div></div>
+      <form id="teamform" class="aform card" novalidate><h3>Add an admin</h3><p class="small">Use the email they sign in with. If they haven't signed up yet, they become admin the first time they sign in (with Google, or after verifying their email).</p>
+      <label class="f">Their email<input id="t_email" type="email" required data-nav></label><p class="err" id="terr2" hidden></p><button class="btn gold" type="submit" data-nav>Add admin</button></form>`;
+  }
+
   /* ---------- helpers ---------- */
   const fail = (id, m) => { const p = $("#" + id); if (p) { p.textContent = m; p.hidden = false; } else toast(m, 4000); };
   const progressBar = (id) => { const b = $("#" + id); if (b) b.hidden = false; return (pct) => { const i = $("#" + id + " i"); if (i) i.style.width = pct + "%"; }; };
@@ -272,6 +283,12 @@ export async function mountAdmin(root, { api, reload }) {
       try { const n = await window.__addStarterTitles({ force: true }); toast(n ? `Added ${n} films as Coming soon` : "All 20 films are already here"); await reload(); return refresh(); }
       catch (er) { toast(er.message, 5000); b.disabled = false; }
       return;
+    }
+    if (b.dataset.tdel) {
+      if (b.dataset.sure !== "1") { b.dataset.sure = "1"; b.textContent = "Press again to remove"; return; }
+      b.disabled = true;
+      try { await api.removeAdmin(b.dataset.tdel); toast(`${b.dataset.tdel} is no longer an admin`); } catch (er) { toast(er.message, 6000); }
+      return render();
     }
     if (b.hasAttribute("data-aghalib")) {
       b.disabled = true;
@@ -373,6 +390,12 @@ export async function mountAdmin(root, { api, reload }) {
         await api.saveAd({ title, imageUrl, link: $("#ad_link").value.trim(), cta: $("#ad_cta").value.trim(), seconds: Math.min(30, Math.max(5, Number($("#ad_sec").value) || 8)), active: true });
         A.ads = await api.allAds(); toast("Ad added"); render();
       } catch (er) { fail("aderr", er.message); btn.disabled = false; }
+    }
+    if (f.id === "teamform") {
+      btn.disabled = true;
+      try { const r = await api.addAdmin($("#t_email").value.trim()); toast(r.active ? `${r.email} is an admin now` : `${r.email} will become admin on first sign-in`, 5000); return render(); }
+      catch (er) { fail("terr2", er.message); btn.disabled = false; }
+      return;
     }
     if (f.id === "giftform") {
       btn.disabled = true;

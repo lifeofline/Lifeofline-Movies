@@ -141,6 +141,9 @@ export function createDemoApi() {
       x.fillStyle = "#fff"; x.font = `bold ${Math.round(w / 14)}px system-ui`; x.fillText("AI DEMO", 30, h / 2); x.font = `${Math.round(w / 34)}px system-ui`; x.fillText(String(b.prompt || "").slice(0, 40), 30, h / 2 + w / 14);
       await wait(0, 500); const url = c.toDataURL("image/png"); return { mime: "image/png", data: url.split(",")[1] };
     },
+    async listAdmins() { return wait((D.admins ||= ["owner@example.com"]).map((email, i) => ({ email, owner: i === 0, active: true }))); },
+    async addAdmin(email) { (D.admins ||= ["owner@example.com"]).push(email.toLowerCase()); save(); return wait({ email, active: false }); },
+    async removeAdmin(email) { D.admins = (D.admins || []).filter((e) => e !== email); save(); return wait({ email }); },
     async grant(email, days) { return wait({ email, until: Date.now() + days * 864e5 }); },
     async stats() { return wait({ premium: premium() ? 1 : 0, titles: Object.keys(D.titles).length, users: D.user ? 1 : 0, billing: "test", video: "test" }); },
     resetDemo() { D = seed(); save(); },

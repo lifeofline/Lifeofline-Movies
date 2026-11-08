@@ -34,7 +34,16 @@ const auth = getAuth();
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const link = (path) => `${APP_URL}/#${path}`;
 
-const OWNER_ADMINS = ["ibmhclms@gmail.com", "aaravraajsingh100@gmail.com"]; // same admins as lifeofline.com (ArtistCart)
+// The owner is always an admin and can't be removed. Everyone else is on the admin list kept in
+// Firestore (config/adminEmails), which admins edit in Admin → Admins. Aarav is on it to start.
+const OWNER_ADMINS = ["ibmhclms@gmail.com"];
+const ADMIN_LIST = () => db.doc("config/adminEmails");
+const norm = (e) => String(e || "").trim().toLowerCase();
+async function adminEmails() {
+  const snap = await ADMIN_LIST().get();
+  if (!snap.exists) { const emails = ["aaravraajsingh100@gmail.com"]; await ADMIN_LIST().set({ emails }); return emails; }
+  return (snap.data().emails || []).map(norm);
+}
 
 async function brevo(to, subject, text, html) {
   if (!env.BREVO_API_KEY || !env.MAIL_FROM_EMAIL) { console.warn("Email skipped: BREVO_API_KEY or MAIL_FROM_EMAIL not set"); return; }
@@ -119,8 +128,8 @@ async function me(uid, body) {
   // First admin: the email(s) in ADMIN_EMAILS on Render can make themselves admin once signed in.
   if (action === "claimAdmin") {
     const u = await auth.getUser(uid);
-    // Built-in admins (the owners) plus anyone in ADMIN_EMAILS on Render.
-    const allowed = [...OWNER_ADMINS, ...String(env.ADMIN_EMAILS || "").toLowerCase().split(/[,\s]+/)].filter(Boolean);
+    // The owner, the admin list (Admin → Admins) and anyone in ADMIN_EMAILS on Render.
+    const allowed = [...OWNER_ADMINS, ...(await adminEmails()), ...String(env.ADMIN_EMAILS || "").toLowerCase().split(/[,\s]+/)].filter(Boolean);
     if (!u.email || !allowed.includes(u.email.toLowerCase())) throw show("This account isn't on the admin list.", 403);
     if (!u.emailVerified) throw show("Verify your email first: open the link we emailed you, then try again.", 403);
     await db.doc(`admins/${uid}`).set({ email: u.email, at: Date.now() });
@@ -177,6 +186,35 @@ async function admin(uid, body) {
     const until = await billing.grant(u.uid, { mode: "gift", days });
     await db.collection("adminLog").add({ by: uid, action: "grant", uid: u.uid, days, at: FieldValue.serverTimestamp() });
     return { until, email: u.email };
+  }
+  // Admin → Admins: see, add and remove admins by email.
+  if (action === "admins") {
+    const [list, docs] = await Promise.all([adminEmails(), db.collection("admins").get()]);
+    const active = docs.docs.map((d) => ({ uid: d.id, email: norm(d.data().email) }));
+    const emails = [...new Set([...OWNER_ADMINS, ...list, ...active.map((a) => a.email).filter(Boolean)])];
+    return { admins: emails.map((email) => ({ email, owner: OWNER_ADMINS.includes(email), active: active.some((a) => a.email === email), you: active.some((a) => a.email === email && a.uid === uid) })) };
+  }
+  if (action === "addAdmin") {
+    const email = norm(body.email);
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw show("Enter their full email address.");
+    await ADMIN_LIST().set({ emails: FieldValue.arrayUnion(email) }, { merge: true });
+    let u = null; try { u = await auth.getUserByEmail(email); } catch {}
+    // Signed up and verified already: admin right away. Otherwise they become admin when they sign in with a verified email.
+    if (u?.emailVerified) await db.doc(`admins/${u.uid}`).set({ email, at: Date.now(), by: uid });
+    await db.collection("adminLog").add({ by: uid, action: "addAdmin", email, at: FieldValue.serverTimestamp() });
+    return { email, active: !!u?.emailVerified };
+  }
+  if (action === "removeAdmin") {
+    const email = norm(body.email);
+    if (OWNER_ADMINS.includes(email)) throw show("The owner's account can't be removed.");
+    const me = await auth.getUser(uid);
+    if (norm(me.email) === email) throw show("You can't remove yourself. Ask another admin.");
+    await ADMIN_LIST().set({ emails: FieldValue.arrayRemove(email) }, { merge: true });
+    const docs = await db.collection("admins").where("email", "in", [...new Set([email, String(body.email || "").trim()].filter(Boolean))]).get();
+    await Promise.all(docs.docs.map((d) => d.ref.delete()));
+    if (String(env.ADMIN_EMAILS || "").toLowerCase().split(/[,\s]+/).includes(email)) throw show("Removed, but this email is also in ADMIN_EMAILS on Render. Delete it there too, or they'll get admin back.");
+    await db.collection("adminLog").add({ by: uid, action: "removeAdmin", email, at: FieldValue.serverTimestamp() });
+    return { email };
   }
   if (action === "stats") {
     const t = Date.now();

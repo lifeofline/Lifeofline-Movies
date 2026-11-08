@@ -201,6 +201,9 @@ export function createFirebaseApi(config, appConfig = {}) {
     deleteAd: wrap(async (id) => { await deleteDoc(doc(db, "ads", id)); return true; }),
     grant: (email, days) => call("/admin", { action: "grant", email, days }),
     stats: () => call("/admin", { action: "stats" }),
+    listAdmins: () => call("/admin", { action: "admins" }).then((r) => r.admins),
+    addAdmin: (email) => call("/admin", { action: "addAdmin", email }),
+    removeAdmin: (email) => call("/admin", { action: "removeAdmin", email }),
     ai: (action, payload = {}) => call("/admin", { action, ...payload }),
   };
   return api;
