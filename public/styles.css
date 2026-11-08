@@ -379,3 +379,38 @@ html { overflow-x: clip; }
 /* Player: no text selection or long-press menu; free-preview badge. */
 .pov, .pov * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .ppv { position: absolute; z-index: 4; top: 56px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.6); color: #ffb840; font: 600 12px/1 system-ui, sans-serif; padding: 7px 12px; border-radius: 99px; pointer-events: none; }
+
+/* Pitch to us (#pitch) and the open-slot posters on Home. */
+.slotrow { display: grid; grid-auto-flow: column; grid-auto-columns: clamp(140px, 38vw, 190px); gap: 12px; overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x mandatory; }
+.slotlink { text-decoration: none; scroll-snap-align: start; }
+.slot-poster { position: relative; aspect-ratio: 2 / 3; border-radius: 12px; border: 2px dashed hsl(var(--h) 70% 62% / .75);
+  background: radial-gradient(120% 80% at 50% 10%, hsl(var(--h) 60% 34% / .55), transparent 70%), linear-gradient(160deg, hsl(var(--h) 45% 16%), var(--ink-2));
+  display: flex; flex-direction: column; justify-content: space-between; padding: 12px; overflow: hidden; transition: transform .2s, border-color .2s; }
+.slotlink:hover .slot-poster, .slotlink:focus-visible .slot-poster { transform: translateY(-3px); border-color: hsl(var(--h) 85% 70%); }
+.slot-n { font: 700 11px/1 var(--f-mono); letter-spacing: .12em; color: hsl(var(--h) 85% 78%); }
+.slot-open { position: absolute; top: 10px; right: 10px; font: 700 10px/1 var(--f-mono); letter-spacing: .1em; background: var(--gold); color: var(--gold-ink); padding: 5px 7px; border-radius: 99px; }
+.slot-mid { display: grid; place-items: center; gap: 6px; text-align: center; color: var(--soft); }
+.slot-plus { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; font-size: 26px; border: 2px solid hsl(var(--h) 70% 65% / .8); color: hsl(var(--h) 85% 80%); }
+.slot-mid b { font-family: var(--f-display); font-size: 17px; }
+.slot-topic { font-family: var(--f-display); font-weight: 700; font-size: 16px; line-height: 1.2; }
+.pitch { padding-bottom: 30px; }
+.pitch-hero { margin-top: 26px; padding: clamp(22px, 5vw, 48px); border-radius: 18px; border: 1px solid var(--line);
+  background: radial-gradient(90% 120% at 100% 0%, rgba(244,173,61,.22), transparent 60%), radial-gradient(80% 100% at 0% 100%, rgba(236,95,134,.18), transparent 60%), var(--ink-2);
+  display: grid; gap: 14px; max-width: 980px; }
+.pitch-hero h1 { font-size: clamp(30px, 5vw, 52px); font-weight: 800; line-height: 1.05; }
+.pitch-hero > p { max-width: 70ch; color: var(--soft); margin: 0; }
+.pitch-sec { margin-top: 34px; display: grid; gap: 12px; }
+.pitch-sec h2 { font-size: 24px; }
+.pitch-sec.two { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); align-items: start; }
+.slotgrid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 520px), 1fr)); }
+.slot.big { display: grid; grid-template-columns: 150px 1fr; gap: 16px; border: 1px solid var(--line); border-radius: 16px; padding: 14px; background: var(--ink-2); }
+.slot.big .slot-body { display: grid; gap: 8px; align-content: start; }
+.slot.big h3 { font-size: 21px; }
+.slot.big p { margin: 0; }
+.slot.big ul, .ticks { margin: 0; padding-left: 18px; color: var(--soft); display: grid; gap: 4px; }
+.slot.big .btn { justify-self: start; margin-top: 4px; }
+@media (max-width: 520px) { .slot.big { grid-template-columns: 1fr; } .slot.big .slot-poster { max-width: 180px; } }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+.steps li { display: grid; grid-template-columns: 34px 1fr; gap: 12px; align-items: start; }
+.steps li > span { width: 34px; height: 34px; border-radius: 50%; background: var(--gold); color: var(--gold-ink); display: grid; place-items: center; font-weight: 800; }
+.steps p { margin: 2px 0 0; }

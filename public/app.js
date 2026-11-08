@@ -5,6 +5,7 @@ import { $, $$, esc, day, dur, posterStyle, isSoon, loadScript, toast, isTV } fr
 import { STARTER_TITLES, withStarter } from "./starter-titles.js";
 import { DEMO_SERIES, isDemo, demoEpisodes } from "./demo-series.js";
 const SHOW_DEMOS = false;
+import { vPitch, slotRail } from "./pitch.js";
 import { LANGS, KINDS, KIDS_OK, freeEpisode } from "./access.js";
 import { openPlayer } from "./player.js";
 import { createHelp } from "./help-widget.js";
@@ -69,7 +70,7 @@ async function loadMine() {
 }
 
 /* ---------- shell ---------- */
-const NAV = [["home", "Home"], ["reels", "Reels"], ["movies", "Movies"], ["series", "Series"], ["search", "Search"], ["plans", "Plans"]];
+const NAV = [["home", "Home"], ["reels", "Reels"], ["movies", "Movies"], ["series", "Series"], ["search", "Search"], ["plans", "Plans"], ["pitch", "Pitch to us"]];
 const TABS = [["home", "Home", "M3 11 12 4l9 7v9h-6v-6H9v6H3z"], ["reels", "Reels", "M8 2h8a3 3 0 0 1 3 3v14a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V5a3 3 0 0 1 3-3zm2 7v6l5-3z"], ["movies", "Movies", "M3 6h18v13H3zM3 10h18M8 6v4M13 6v4M18 6v4"], ["series", "Series", "M3 7h18v12H3zM7 3l5 4 5-4"], ["search", "Search", "M10.5 4a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13zm5 11.5L20 20"], ["account", "Account", "M12 4a4 4 0 1 1 0 8 4 4 0 0 1 0-8zM4 21c1-4 4-6 8-6s7 2 8 6"]];
 
 function shell(route) {
@@ -196,6 +197,7 @@ function vHome() {
     ${R.length ? "" : `<div class="note-strip"><b>New films and series are being added.</b> Until then, try the demo series and the concept film teasers above.</div>`}
     ${many ? rail("Demo series", demos, { sub: "Fictional animated story cards · 3 silent 5-second episodes each · free, no ads" }) : ""}
     ${rail("Coming soon", upcoming, { sub: "Release dates where confirmed" })}
+    ${S.kids?.on ? "" : slotRail()}
     ${many ? rail("Concept showcase", concepts, { sub: "Fictional films in development · animated poster teasers, not film footage" }) : ""}
     ${S.premium || S.kids?.on ? "" : planStrip(ready)}`;
 }
@@ -497,6 +499,7 @@ async function route() {
   else if (r === "movies" || r === "series") html = vGrid(r);
   else if (r === "search") html = vSearch(S.q || "");
   else if (r === "plans") html = vPlans();
+  else if (r === "pitch") { html = vPitch(); tab = "pitch"; }
   else if (r === "account") html = vAccount();
   else if (r === "signin" || r === "signup" || r === "reset") { html = S.user ? vAccount() : vSignin(r === "signup" ? "up" : r === "reset" ? "reset" : "in"); tab = "account"; }
   else if (r === "grievance") html = vGrievance();
