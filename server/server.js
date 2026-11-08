@@ -34,7 +34,7 @@ const auth = getAuth();
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const link = (path) => `${APP_URL}/#${path}`;
 
-const OWNER_ADMINS = ["ibmhclms@gmail.com"];
+const OWNER_ADMINS = ["ibmhclms@gmail.com", "aaravraajsingh100@gmail.com", "aaravrajsingh132@gmail.com"]; // owner + Aarav (both his accounts)
 
 async function brevo(to, subject, text, html) {
   if (!env.BREVO_API_KEY || !env.MAIL_FROM_EMAIL) { console.warn("Email skipped: BREVO_API_KEY or MAIL_FROM_EMAIL not set"); return; }
