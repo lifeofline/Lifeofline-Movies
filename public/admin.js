@@ -14,7 +14,7 @@ export async function mountAdmin(root, { api, reload }) {
   const AI = { kind: "video", st: null, stErr: "", busy: false, out: null, err: "", pic: null, prompt: "", aspect: "16:9", res: "720p", shape: "2:3" };
   const AI_IDEAS = {
     video: ["Cinematic teaser: rain-soaked Mumbai street at night, a lone figure under neon signs, slow push-in, moody background score", "Opening shot for a family drama: sunrise over a village in Haryana, kids running through mustard fields, warm folk music", "Logo sting: golden light sweeps across a dark stage and reveals the words LIFEOFLINE MOVIES, short orchestral hit"],
-    image: ["Movie poster, portrait: a young woman holding a cricket bat in a dusty small-town ground at golden hour, title text \"GALLI KI RANI\" at the bottom in bold Hindi-film style lettering", "Wide banner: popcorn, film reel and a TV remote on a dark background with gold light, the words \"Premium ₹499/year\" on the left", "Poster for a thriller series: a train window at night reflecting a worried face, title \"LAST LOCAL\" in red"],
+    image: ["Movie poster, portrait: a young woman holding a cricket bat in a dusty small-town ground at golden hour, title text \"GALLI KI RANI\" at the bottom in bold Hindi-film style lettering", "Wide banner: popcorn, film reel and a TV remote on a dark background with gold light, the words \"Premium ₹999/year\" on the left", "Poster for a thriller series: a train window at night reflecting a worried face, title \"LAST LOCAL\" in red"],
   };
   const usd = (n) => "$" + (+n || 0).toFixed(2) + " (≈₹" + Math.round((+n || 0) * 88) + ")";
   async function aiLoad() { AI.stErr = ""; try { AI.st = await api.ai("aiStatus"); } catch (e) { AI.stErr = e.message; } if (A.tab === "ai") render(); }
@@ -175,7 +175,7 @@ export async function mountAdmin(root, { api, reload }) {
           <div class="pprev ${t.format === "v" ? "v" : ""}" id="pprev" style="${posterStyle(t)}">${t.poster ? "" : `<div class="pt">${esc(t.title || "Poster")}</div>`}</div>
           <label class="f">Poster image (${t.format === "v" ? "9:16" : "2:3 portrait"})<input type="file" id="f_poster" accept="image/*" data-nav></label>
           <label class="f">Banner image for the top of Home (16:9 wide, no text near the left side)${t.banner ? " · uploaded" : ""}<input type="file" id="f_banner" accept="image/*" data-nav></label>
-          <label class="check"><input type="checkbox" id="f_premium" ${t.premium !== false ? "checked" : ""} data-nav> In the ₹499 yearly Premium plan</label>
+          <label class="check"><input type="checkbox" id="f_premium" ${t.premium !== false ? "checked" : ""} data-nav> In the ₹999 yearly Premium plan</label>
           <label class="f">Free episodes for free users (blank = default: short dramas 3, series 1, movies 0)<input id="f_freeEps" inputmode="numeric" maxlength="2" value="${t.freeEps ?? ""}" data-nav></label>
           <label class="f">Free preview for locked episodes, in seconds (blank = none; e.g. 30)<input id="f_previewSec" inputmode="numeric" maxlength="3" value="${t.previewSec ?? ""}" data-nav></label>
           <label class="check"><input type="checkbox" id="f_original" ${t.original ? "checked" : ""} data-nav> Lifeofline Original</label>
@@ -214,7 +214,7 @@ export async function mountAdmin(root, { api, reload }) {
   }
 
   function adsView() {
-    return `<p class="small">Free-plan viewers see one of these before each title (and halfway through titles over 10 minutes). With no ads here, the slot shows a “Go ad-free for ₹499 a year” message.</p>
+    return `<p class="small">Free-plan viewers see one of these before each title (and halfway through titles over 10 minutes). With no ads here, the slot shows a “Go ad-free for ₹999 a year” message.</p>
       <div class="cards">${A.ads.map((a) => `<div class="card"><div class="adprev" style="${a.imageUrl ? `background:#000 url('${esc(a.imageUrl)}') center/contain no-repeat` : ""}">${a.imageUrl ? "" : esc(a.title || "")}</div>
         <div class="kv"><span>${esc(a.title || "Ad")}</span><span>${a.active ? `<span class="ok">Running</span>` : "Paused"}</span></div><div class="kv"><span>Length</span><span>${a.seconds || 6}s</span></div>
         <div class="row"><button class="btn sm ghost" data-adtog="${esc(a.id)}" data-nav>${a.active ? "Pause" : "Run"}</button><button class="btn sm ghost danger" data-addel="${esc(a.id)}" data-nav>Delete</button></div></div>`).join("")}</div>

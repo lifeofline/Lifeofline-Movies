@@ -381,7 +381,7 @@ html { overflow-x: clip; }
 .ppv { position: absolute; z-index: 4; top: 56px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.6); color: #ffb840; font: 600 12px/1 system-ui, sans-serif; padding: 7px 12px; border-radius: 99px; pointer-events: none; }
 
 /* Pitch to us (#pitch) and the open-slot posters on Home. */
-.slotrow { display: grid; grid-auto-flow: column; grid-auto-columns: clamp(140px, 38vw, 190px); gap: 12px; overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x mandatory; }
+.slotrow { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(138px, 1fr); gap: 12px; overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x mandatory; }
 .slotlink { text-decoration: none; scroll-snap-align: start; }
 .slot-poster { position: relative; aspect-ratio: 2 / 3; border-radius: 12px; border: 2px dashed hsl(var(--h) 70% 62% / .75);
   background: radial-gradient(120% 80% at 50% 10%, hsl(var(--h) 60% 34% / .55), transparent 70%), linear-gradient(160deg, hsl(var(--h) 45% 16%), var(--ink-2));
@@ -389,7 +389,7 @@ html { overflow-x: clip; }
 .slotlink:hover .slot-poster, .slotlink:focus-visible .slot-poster { transform: translateY(-3px); border-color: hsl(var(--h) 85% 70%); }
 .slot-n { font: 700 11px/1 var(--f-mono); letter-spacing: .12em; color: hsl(var(--h) 85% 78%); }
 .slot-open { position: absolute; top: 10px; right: 10px; font: 700 10px/1 var(--f-mono); letter-spacing: .1em; background: var(--gold); color: var(--gold-ink); padding: 5px 7px; border-radius: 99px; }
-.slot-mid { display: grid; place-items: center; gap: 6px; text-align: center; color: var(--soft); }
+.slot-mid { flex: 1; display: grid; place-items: center; align-content: center; gap: 6px; text-align: center; color: var(--soft); }
 .slot-plus { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; font-size: 26px; border: 2px solid hsl(var(--h) 70% 65% / .8); color: hsl(var(--h) 85% 80%); }
 .slot-mid b { font-family: var(--f-display); font-size: 17px; }
 .slot-topic { font-family: var(--f-display); font-weight: 700; font-size: 16px; line-height: 1.2; }

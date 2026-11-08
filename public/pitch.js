@@ -4,7 +4,7 @@ import { esc } from "./util.js";
 
 export const PITCH_EMAIL = "movies@lifeofline.com";
 
-// Five open slots, each a theme we'd like to commission. Hue = the slot card's colour.
+// Eight open slots, each a theme we'd like to commission. Hue = the slot card's colour.
 export const SLOTS = [
   { n: 1, topic: "Folk tales, retold", format: "Short film or mini-series · 15–40 min", hue: 28,
     blurb: "A legend from your village, a story your grandmother told, a god or ghost from a regional tradition, told for today.",
@@ -21,6 +21,15 @@ export const SLOTS = [
   { n: 5, topic: "Artists' journeys", format: "Documentary, music film or podcast", hue: 160,
     blurb: "The life of a singer, dancer, painter or theatre troupe: the struggle, the craft and the stage. Podcasts and music films too.",
     ideas: ["Behind-the-scenes access", "Performances in full", "Video podcasts with artists"] },
+  { n: 6, topic: "Everyday comedy", format: "Sitcom, sketch series or short film", hue: 48,
+    blurb: "The joke is in the everyday: a joint family, a chaotic office, a wedding gone sideways, neighbours who never stop talking.",
+    ideas: ["Short episodes of 5–15 min", "Relatable characters, regional humour", "Clean comedy the whole family can watch"] },
+  { n: 7, topic: "Youth & campus", format: "Web series or short drama", hue: 190,
+    blurb: "Hostels, exams, first jobs, friendships and heartbreaks: what it feels like to be 18 to 25 in India right now.",
+    ideas: ["Fresh faces and real campuses", "Vertical (9:16) short dramas welcome", "Honest, fun and a little messy"] },
+  { n: 8, topic: "Horror & the unexplained", format: "Anthology, series or feature", hue: 0,
+    blurb: "Haunted havelis, highway legends, village curses and things that go bump at 3 am. Slow dread or full scares.",
+    ideas: ["Folk horror from your region", "One story per episode works well", "Sound and atmosphere over big effects"] },
 ];
 
 const mail = (s) => `mailto:${PITCH_EMAIL}?subject=${encodeURIComponent(s ? `Pitch: Slot ${String(s.n).padStart(2, "0")} – ${s.topic}` : "Pitch for Lifeofline Movies")}&body=${encodeURIComponent(
@@ -36,7 +45,7 @@ function slotCard(s, big = false) {
   </article>`;
 }
 
-// Home row: five blank posters that lead to the pitch page.
+// Home row: eight blank posters that lead to the pitch page.
 export function slotRail() {
   return `<section class="rail"><div class="rail-h"><h2>Open slots · your film here</h2><a href="#pitch" data-nav>Pitch to us</a></div>
     <div class="slotrow">${SLOTS.map((s) => `<a href="#pitch" data-nav class="slotlink" aria-label="Open slot ${s.n}: ${esc(s.topic)}">${slotCard(s)}</a>`).join("")}</div></section>`;
@@ -48,12 +57,12 @@ export function vPitch() {
     <section class="pitch-hero">
       <span class="eyebrow">For filmmakers, writers and creators</span>
       <h1>Your story could stream on Lifeofline Movies</h1>
-      <p>We're building an OTT home for original Indian stories. Films, web series, short dramas, documentaries and podcasts from independent creators, made with heart. Five slots are open right now. Pick a theme, pitch your work, and let's make it together.</p>
-      <div class="row"><a class="btn gold" href="${mail(null)}">Email your pitch</a><button type="button" class="btn ghost" onclick="document.getElementById('slots').scrollIntoView({behavior:'smooth'})">See the 5 open slots</button></div>
+      <p>We're building an OTT home for original Indian stories. Films, web series, short dramas, documentaries and podcasts from independent creators, made with heart. Eight slots are open right now. Pick a theme, pitch your work, and let's make it together.</p>
+      <div class="row"><a class="btn gold" href="${mail(null)}">Email your pitch</a><button type="button" class="btn ghost" onclick="document.getElementById('slots').scrollIntoView({behavior:'smooth'})">See the 8 open slots</button></div>
       <p class="small">Write to <a href="${mail(null)}">${PITCH_EMAIL}</a></p>
     </section>
 
-    <section id="slots" class="pitch-sec"><h2>5 open slots</h2><p class="small">Each slot is a theme we want to commission. Any Indian language. Finished films, works in progress and strong ideas all welcome.</p>
+    <section id="slots" class="pitch-sec"><h2>8 open slots</h2><p class="small">Each slot is a theme we want to commission. Any Indian language. Finished films, works in progress and strong ideas all welcome.</p>
       <div class="slotgrid">${SLOTS.map((s) => slotCard(s, true)).join("")}</div></section>
 
     <section class="pitch-sec two">

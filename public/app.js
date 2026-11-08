@@ -12,11 +12,11 @@ import { createHelp } from "./help-widget.js";
 
 const DEMO = String(firebaseConfig.apiKey || "").startsWith("PASTE");
 const api = DEMO ? (await import("./api-demo.js")).createDemoApi() : (await import("./api-firebase.js")).createFirebaseApi(firebaseConfig, appConfig);
-const PRICE = 499; // Premium is paid once a year
+const PRICE = 999; // Premium is paid once a year
 
 /* ---------- chat support: quick answers, then the Lifeofline Helpdesk ---------- */
 const HELP_FAQS = [
-  { id: "price", q: "How much is Premium?", keys: /\b(premium|price|cost|499|plan|subscri|how much|charge)\w*/, a: `<b>Premium is ₹${PRICE} a year</b> (prices include GST): every available film, series and short drama, no ads, Full HD where available, on phone, computer and TV. There's also a free plan with ads.`, links: [["See plans", "#lh:go:#plans"]], next: ["free", "pay", "cancel"] },
+  { id: "price", q: "How much is Premium?", keys: /\b(premium|price|cost|499|999|plan|subscri|how much|charge)\w*/, a: `<b>Premium is ₹${PRICE} a year</b> (prices include GST): every available film, series and short drama, no ads, Full HD where available, on phone, computer and TV. There's also a free plan with ads.`, links: [["See plans", "#lh:go:#plans"]], next: ["free", "pay", "cancel"] },
   { id: "free", q: "What can I watch free?", keys: /\b(free|without pay|no money|ads?|advert)\b/, a: "Titles marked <b>Free</b>, the first episodes of many series and short dramas, and every poster teaser and trailer play free with short ad breaks. Premium removes the ads and unlocks everything.", next: ["price"] },
   { id: "pay", q: "How can I pay?", keys: /\b(pay|payment|upi|card|netbank|gpay|phonepe|paytm|razorpay|failed|declined|deducted)\w*/, a: "Pay with UPI (GPay, PhonePe, Paytm and others), debit or credit card, or netbanking through Razorpay. If money was deducted but Premium didn't start, wait 10 minutes and reopen the app; if it still hasn't, chat with the Helpdesk and we'll fix it.", next: ["price", "refund"] },
   { id: "cancel", q: "How do I cancel?", keys: /\b(cancel|stop|unsubscri|autopay|mandate|renew)\w*/, a: "Open <b>Account → Plan → Cancel renewal</b>. No more charges are made and Premium keeps working until the end of the period you paid for. You can also cancel the UPI Autopay mandate in your UPI app.", links: [["Open Account", "#lh:go:#account"]], next: ["refund"] },
@@ -201,7 +201,7 @@ function vHome() {
     ${many ? rail("Concept showcase", concepts, { sub: "Fictional films in development · animated poster teasers, not film footage" }) : ""}
     ${S.premium || S.kids?.on ? "" : planStrip(ready)}`;
 }
-// The ₹499 yearly plan, explained with what is actually available today.
+// The ₹999 yearly plan, explained with what is actually available today.
 function planStrip(ready) {
   const n = ready.length;
   return `<section class="planbox"><div class="pb-main"><div class="price">₹${PRICE}<small> / year</small></div>

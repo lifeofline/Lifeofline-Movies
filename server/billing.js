@@ -1,4 +1,4 @@
-// Premium: ₹499 a year (one payment a year) through Razorpay (the Lifeofline Pvt Ltd account already used by ArtistCart).
+// Premium: ₹999 a year (one payment a year) through Razorpay (the Lifeofline Pvt Ltd account already used by ArtistCart).
 //
 // Two ways to charge, picked on Render:
 //   RAZORPAY_SUBSCRIPTIONS=on  → auto-renewing subscription (UPI Autopay, cards, e-mandate). Needs Razorpay
@@ -12,7 +12,7 @@
 //     until: <ms, Premium works until then>, rzpSubId?, startedAt, reminded? }
 const crypto = require("crypto");
 
-const PRICE = Number(process.env.PREMIUM_PRICE || 499); // ₹ incl. GST, for a year
+const PRICE = Number(process.env.PREMIUM_PRICE || 999); // ₹ incl. GST, for a year
 const PERIOD = "yearly"; // charged once a year
 const PASS_DAYS = 365;
 const REMIND_DAYS = 7; // reminder email before a pass ends
