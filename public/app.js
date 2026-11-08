@@ -4,6 +4,7 @@ import { firebaseConfig, appConfig } from "./config.js";
 import { $, $$, esc, day, dur, posterStyle, isSoon, loadScript, toast, isTV } from "./util.js";
 import { STARTER_TITLES, withStarter } from "./starter-titles.js";
 import { DEMO_SERIES, isDemo, demoEpisodes } from "./demo-series.js";
+const SHOW_DEMOS = false;
 import { LANGS, KINDS, KIDS_OK, freeEpisode } from "./access.js";
 import { openPlayer } from "./player.js";
 import { createHelp } from "./help-widget.js";
@@ -48,7 +49,8 @@ async function loadCatalogue() {
   const [titles, ads] = await Promise.all([api.titles().catch(() => []), api.ads().catch(() => [])]);
   // The demo series ship with the site; a Firestore title with the same id (edited in Admin) wins.
   const have = new Set(titles.map((t) => t.id));
-  S.titles = [...titles.map(withStarter), ...DEMO_SERIES.filter((d) => !have.has(d.id))]; S.ads = ads;
+  // The demo story cards are off: viewers see our real Original (Ghalib Zinda Hai) and the films marked "Coming soon".
+  S.titles = [...titles.map(withStarter), ...(SHOW_DEMOS ? DEMO_SERIES.filter((d) => !have.has(d.id)) : [])]; S.ads = ads;
 }
 // Demo series carry their own episodes; everything else asks the server.
 // Episodes planned ahead (no video yet) stay hidden from viewers until their video is uploaded.
