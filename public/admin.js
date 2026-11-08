@@ -3,6 +3,7 @@
 import { $, esc, dur, posterStyle, toast, hues } from "./util.js";
 import { LANGS, KINDS, RATINGS } from "./access.js";
 import { withStarter } from "./starter-titles.js";
+import { GHALIB_ID, GHALIB_TITLE, GHALIB_EPISODES } from "./ghalib.js";
 
 export async function mountAdmin(root, { api, reload }) {
   const A = { tab: "titles", titles: [], editing: null, eps: [], ads: [], busy: false };
@@ -137,7 +138,7 @@ export async function mountAdmin(root, { api, reload }) {
   }
 
   function titleList() {
-    return `<div class="row"><button class="btn gold" data-anew data-nav>＋ Add a title</button><button class="btn ghost" data-astarter data-nav>Add the 20 Lifeofline films (Coming soon)</button></div>
+    return `<div class="row"><button class="btn gold" data-anew data-nav>＋ Add a title</button><button class="btn ghost" data-astarter data-nav>Add the 20 Lifeofline films (Coming soon)</button><button class="btn ghost" data-aghalib data-nav>${A.titles.some((t) => t.id === GHALIB_ID) ? "Ghalib Zinda Hai: add missing episodes" : "Set up Ghalib Zinda Hai (72 episodes)"}</button></div>
       <div class="tbl"><table class="atable"><thead><tr><th></th><th>Title</th><th>Type</th><th>Language</th><th>Rating</th><th>Plan</th><th>Episodes</th><th>Status</th><th></th></tr></thead><tbody>
       ${A.titles.map((t) => `<tr><td><span class="mini" style="${posterStyle(t)}"></span></td><td><b>${esc(t.title)}</b>${t.original ? ` <span class="small">Original</span>` : ""}</td><td>${esc(KINDS[t.kind] || "")}</td><td>${esc(t.lang || "")}</td><td><span class="rating">${esc(t.rating || "")}</span></td>
         <td>${t.premium ? "Premium" : "Free"}</td><td>${t.episodeCount || 0}</td><td>${!t.published ? `<span class="small">Draft</span>` : t.comingSoon ? `<span class="small">Coming soon</span>` : `<span class="ok">Live</span>`}</td>
@@ -198,6 +199,7 @@ export async function mountAdmin(root, { api, reload }) {
         <input class="epname" value="${esc(e.name || "")}" aria-label="Episode name" maxlength="80" data-nav>
         <select class="epfree" aria-label="Who can watch" data-nav><option value="" ${e.free == null ? "selected" : ""}>Default rule</option><option value="free" ${e.free === true ? "selected" : ""}>Free for everyone</option><option value="prem" ${e.free === false ? "selected" : ""}>Premium only</option></select>
         <span class="small vstat">${e.videoUid ? (e.duration ? "Ready · " + dur(e.duration) : "Processing…") : "No video"}</span>
+        ${e.videoUid ? "" : `<input type="file" class="epfile" accept="video/*" aria-label="Video for this episode" data-nav><button class="btn sm gold" data-epup data-nav>Upload</button><div class="bar" id="epbar_${esc(e.id)}" hidden><i></i></div>`}
         <button class="btn sm ghost" data-epsave data-nav>Save</button><button class="btn sm ghost" data-epcheck data-nav>Check video</button><button class="btn sm ghost danger" data-epdel data-nav>Delete</button>
       </div>`).join("") || `<p class="small">No ${movie ? "video" : "episodes"} yet.</p>`}
       ${movie && A.eps.length ? "" : `<div class="aep new"><span class="n">${String((A.eps.at(-1)?.n || 0) + 1).padStart(2, "0")}</span>
@@ -271,6 +273,18 @@ export async function mountAdmin(root, { api, reload }) {
       catch (er) { toast(er.message, 5000); b.disabled = false; }
       return;
     }
+    if (b.hasAttribute("data-aghalib")) {
+      b.disabled = true;
+      try {
+        const have = A.titles.find((t) => t.id === GHALIB_ID);
+        if (!have) await api.saveTitle({ ...GHALIB_TITLE, episodeCount: 0 });
+        const eps = have ? await api.episodes(GHALIB_ID) : [], got = new Set(eps.map((e) => e.n));
+        let added = 0;
+        for (const e of GHALIB_EPISODES) if (!got.has(e.n)) { await api.saveEpisode(GHALIB_ID, { id: "e" + String(e.n).padStart(2, "0"), n: e.n, name: e.name, desc: e.desc, year: e.year, ghazal: e.ghazal, duration: 0 }); added++; b.textContent = `Adding episodes… ${added}`; }
+        toast(added ? `Ghalib Zinda Hai: added ${added} episodes. Upload each video from the title's page.` : "All 72 episodes are already there."); await reload(); return openTitle(GHALIB_ID);
+      } catch (er) { toast(er.message, 5000); b.disabled = false; }
+      return;
+    }
     if (b.dataset.aedit) return openTitle(b.dataset.aedit);
     if (b.hasAttribute("data-aback")) { A.editing = null; return refresh(); }
     if (b.hasAttribute("data-adel")) {
@@ -286,6 +300,16 @@ export async function mountAdmin(root, { api, reload }) {
         const set = progressBar("nepbar");
         const uid = await api.uploadVideo(file, set);
         await api.saveEpisode(A.editing.id, { n, name, videoUid: uid, duration: 0 });
+        toast("Uploaded. Cloudflare is preparing it."); A.eps = await api.episodes(A.editing.id); render();
+      } catch (er) { toast(er.message, 6000); b.disabled = false; } finally { A.busy = false; }
+      return;
+    }
+    if (row && b.hasAttribute("data-epup")) {
+      const file = $(".epfile", row).files[0]; if (!file) return toast("Choose the video file first.");
+      b.disabled = true; A.busy = true;
+      try {
+        const uid = await api.uploadVideo(file, progressBar("epbar_" + row.dataset.epid));
+        await api.saveEpisode(A.editing.id, { id: row.dataset.epid, videoUid: uid, duration: 0 });
         toast("Uploaded. Cloudflare is preparing it."); A.eps = await api.episodes(A.editing.id); render();
       } catch (er) { toast(er.message, 6000); b.disabled = false; } finally { A.busy = false; }
       return;

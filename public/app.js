@@ -51,7 +51,8 @@ async function loadCatalogue() {
   S.titles = [...titles.map(withStarter), ...DEMO_SERIES.filter((d) => !have.has(d.id))]; S.ads = ads;
 }
 // Demo series carry their own episodes; everything else asks the server.
-const episodesOf = (id) => (demoEpisodes(id) ? Promise.resolve(demoEpisodes(id)) : api.episodes(id).catch(() => []));
+// Episodes planned ahead (no video yet) stay hidden from viewers until their video is uploaded.
+const episodesOf = (id) => (demoEpisodes(id) ? Promise.resolve(demoEpisodes(id)) : api.episodes(id).then((eps) => (S.admin ? eps : eps.filter((e) => e.videoUid))).catch(() => []));
 async function loadMine() {
   if (!S.user) { S.progress = {}; S.list = []; S.premium = false; S.sub = null; S.admin = false; S.profile = null; return; }
   const [progress, list, st, admin, profile] = await Promise.all([
@@ -59,6 +60,9 @@ async function loadMine() {
     api.subStatus().catch(() => null), api.isAdmin().catch(() => false), api.profile().catch(() => null),
   ]);
   Object.assign(S, { progress, list, admin, profile });
+  // Admins are set by email on the server (ADMIN_EMAILS). An allowlisted account becomes admin silently on sign-in;
+  // everyone else never sees any admin option.
+  if (!S.admin && !DEMO) S.admin = await api.claimAdmin().then(() => true, () => false);
   if (st) { S.premium = st.premium; S.sub = st.sub; S.billing = st.mode; }
 }
 
@@ -67,8 +71,10 @@ const NAV = [["home", "Home"], ["reels", "Reels"], ["movies", "Movies"], ["serie
 const TABS = [["home", "Home", "M3 11 12 4l9 7v9h-6v-6H9v6H3z"], ["reels", "Reels", "M8 2h8a3 3 0 0 1 3 3v14a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V5a3 3 0 0 1 3-3zm2 7v6l5-3z"], ["movies", "Movies", "M3 6h18v13H3zM3 10h18M8 6v4M13 6v4M18 6v4"], ["series", "Series", "M3 7h18v12H3zM7 3l5 4 5-4"], ["search", "Search", "M10.5 4a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13zm5 11.5L20 20"], ["account", "Account", "M12 4a4 4 0 1 1 0 8 4 4 0 0 1 0-8zM4 21c1-4 4-6 8-6s7 2 8 6"]];
 
 function shell(route) {
-  $("#nav").innerHTML = NAV.map(([k, l]) => `<a href="#${k}" data-nav class="${route === k ? "on" : ""}">${l}</a>`).join("");
-  $("#tabbar").innerHTML = TABS.map(([k, l, d]) => `<a href="#${k}" class="${route === k ? "on" : ""}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="${d}"/></svg>${l}</a>`).join("");
+  const nav = S.admin ? [...NAV, ["admin", "Admin"]] : NAV;
+  const tabs = S.admin ? [...TABS.slice(0, -1), ["admin", "Admin", "M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6zM9 12l2 2 4-4"], TABS.at(-1)] : TABS;
+  $("#nav").innerHTML = nav.map(([k, l]) => `<a href="#${k}" data-nav class="${route === k ? "on" : ""}">${l}</a>`).join("");
+  $("#tabbar").innerHTML = tabs.map(([k, l, d]) => `<a href="#${k}" class="${route === k ? "on" : ""}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="${d}"/></svg>${l}</a>`).join("");
   $("#tabbar").hidden = false;
   $("#me").innerHTML = S.premium ? `<a href="#account" class="badge prem" data-nav>Premium</a>`
     : `<a href="#plans" class="btn gold sm" data-nav>Subscribe ₹${PRICE}/yr</a>`;
@@ -459,7 +465,7 @@ function vAccount() {
     <div class="card"><h3>Help</h3><p class="small">Quick answers any time, or chat, call or WhatsApp the Lifeofline Helpdesk (9 AM – 9 PM, every day). Complaints about a title: we reply within 24 hours and resolve within 15 days.</p>
       <a class="btn gold" href="#help" data-nav>💬 Chat support</a>
       <a class="btn ghost" href="#grievance" data-nav>Contact the grievance officer</a>
-      ${S.admin ? `<a class="btn gold" href="#admin" data-nav>Open Admin</a>` : S.user ? `<button class="link small" data-claim>I'm on the admin list</button>` : ""}</div>
+      ${S.admin ? `<a class="btn gold" href="#admin" data-nav>Open Admin</a>` : ""}</div>
   </div>`;
 }
 

@@ -34,6 +34,8 @@ const auth = getAuth();
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const link = (path) => `${APP_URL}/#${path}`;
 
+const OWNER_ADMINS = ["ibmhclms@gmail.com"];
+
 async function brevo(to, subject, text, html) {
   if (!env.BREVO_API_KEY || !env.MAIL_FROM_EMAIL) { console.warn("Email skipped: BREVO_API_KEY or MAIL_FROM_EMAIL not set"); return; }
   const res = await fetch("https://api.brevo.com/v3/smtp/email", {
@@ -117,7 +119,8 @@ async function me(uid, body) {
   // First admin: the email(s) in ADMIN_EMAILS on Render can make themselves admin once signed in.
   if (action === "claimAdmin") {
     const u = await auth.getUser(uid);
-    const allowed = String(env.ADMIN_EMAILS || "").toLowerCase().split(/[,\s]+/).filter(Boolean);
+    // Built-in admins (the owners) plus anyone in ADMIN_EMAILS on Render.
+    const allowed = [...OWNER_ADMINS, ...String(env.ADMIN_EMAILS || "").toLowerCase().split(/[,\s]+/)].filter(Boolean);
     if (!u.email || !allowed.includes(u.email.toLowerCase())) throw show("This account isn't on the admin list.", 403);
     if (!u.emailVerified) throw show("Verify your email first: open the link we emailed you, then try again.", 403);
     await db.doc(`admins/${uid}`).set({ email: u.email, at: Date.now() });
