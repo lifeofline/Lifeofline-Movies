@@ -35,7 +35,6 @@ export async function openPlayer(opts) {
   ov.className = "pov"; ov.setAttribute("role", "dialog"); ov.setAttribute("aria-label", "Player: " + title.title);
   ov.innerHTML = `<div class="pstage ${vertical ? "v" : ""}" id="pstage">
       <video id="pv" playsinline webkit-playsinline preload="auto" controlslist="nodownload noremoteplayback noplaybackrate" disablepictureinpicture disableremoteplayback></video>
-      <div class="pwm" id="pwm" aria-hidden="true"></div>
       <div class="ppv" id="ppv" hidden></div>
       <div class="plyr" id="plyr"></div>
       <div class="ptop"><button class="pic" data-pclose aria-label="Close">✕</button><b id="pname">${esc(title.title)}</b><span class="rating" id="prate">${esc(title.rating || "U")}</span></div>
@@ -87,9 +86,7 @@ async function start(P, epId, trailer, startAt) {
   $("#pname", P.ov).textContent = trailer ? `${P.title.title} · ${P.direct ? "Animated poster teaser" : "Trailer"}` : P.title.kind === "movie" ? P.title.title : `${P.title.title} · Ep ${r.n}${P.title.demo ? " · Demo story card" : ""}`;
   const nx = nextEp(P); $("#pnext", P.ov).hidden = !nx;
   if (r.poster) P.video.poster = r.poster;
-  // Viewer watermark (moves around) and the preview badge.
-  const wm = $("#pwm", P.ov); wm.textContent = r.mark || ""; clearInterval(P.wmT);
-  if (r.mark) { const hop = () => { wm.style.left = 8 + Math.random() * 55 + "%"; wm.style.top = 10 + Math.random() * 75 + "%"; }; hop(); P.wmT = setInterval(hop, 12000); }
+  // Free-preview badge.
   const pv = $("#ppv", P.ov); pv.hidden = !r.preview; pv.textContent = r.preview ? `Free preview · ${r.preview} seconds` : "";
 
   P.started = false; P.netRetries = 0;
@@ -289,7 +286,7 @@ function teardown(fromCode) {
   const P = current; if (!P) return;
   P.destroyed = true; current = null;
   save(P);
-  clearInterval(P.countT); clearInterval(P.wmT); clearTimeout(P.idleT); clearTimeout(P.startT);
+  clearInterval(P.countT); clearTimeout(P.idleT); clearTimeout(P.startT);
   document.removeEventListener("keydown", P.onKey);
   window.removeEventListener("popstate", P.onPop);
   try { P.video.pause(); P.hls?.destroy(); P.video.removeAttribute("src"); P.video.load(); } catch { /* ignore */ }

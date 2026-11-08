@@ -108,9 +108,7 @@ async function play(uid, { titleId, epId, trailer }) {
   if (!ep || !ep.videoUid) throw show("This episode isn't uploaded yet.", 404);
   // Lock the video down the first time it's played (signed links only, our site only).
   if (!ep.protectedAt) { await stream.protect(ep.videoUid).then(() => eSnap.ref.set({ protectedAt: Date.now() }, { merge: true })).catch((e) => console.error("protect", e.message)); }
-  // Who is watching: shown faintly over the video, so a screen recording can be traced back to the account.
-  const mark = uid ? await auth.getUser(uid).then((u) => u.email || u.phoneNumber || uid.slice(0, 8)).catch(() => "") : "";
-  const info = { ...base, ads: base.ads && !admin, epId: eSnap.id, n: ep.n, name: ep.name || "", duration: ep.duration || 0, mark };
+  const info = { ...base, ads: base.ads && !admin, epId: eSnap.id, n: ep.n, name: ep.name || "", duration: ep.duration || 0 };
   if (!freeEpisode(t, ep) && !premium && !admin) {
     const secs = Math.round(Number(t.previewSec) || 0);
     if (!secs) throw show(`This is in the ₹${billing.PRICE} Premium plan.`, 402, { needPlan: true });
