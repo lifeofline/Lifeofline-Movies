@@ -4,6 +4,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebas
 import {
   getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, GoogleAuthProvider,
   signInWithPopup, signInWithRedirect, getRedirectResult, sendPasswordResetEmail, sendEmailVerification, signOut, updateProfile,
+  FacebookAuthProvider, RecaptchaVerifier, signInWithPhoneNumber,
 } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
 import {
   getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc, collection, query, where, orderBy, getDocs, serverTimestamp, onSnapshot, limit, writeBatch,
@@ -20,7 +21,13 @@ const friendly = (e) => {
     "auth/user-not-found": "No account uses that email. Sign up instead.", "auth/email-already-in-use": "An account already uses that email. Sign in instead.",
     "auth/weak-password": "Use a password of at least 6 characters.", "auth/invalid-email": "Check the email address.",
     "auth/too-many-requests": "Too many tries. Wait a few minutes and try again.", "auth/network-request-failed": "No connection. Check your internet and try again.",
-    "auth/popup-closed-by-user": "Google sign-in was closed before it finished.", "permission-denied": "You don't have permission to do that.",
+    "auth/popup-closed-by-user": "Sign-in was closed before it finished.", "auth/cancelled-popup-request": "Sign-in was closed before it finished.", "permission-denied": "You don't have permission to do that.",
+    "auth/invalid-phone-number": "Check the mobile number.", "auth/missing-phone-number": "Enter your mobile number.",
+    "auth/invalid-verification-code": "That OTP isn't right. Check the SMS and try again.", "auth/code-expired": "That OTP has expired. Tap Resend OTP.",
+    "auth/quota-exceeded": "We can't send more OTPs right now. Try again later or use email.", "auth/captcha-check-failed": "The security check failed. Close this and try again.",
+    "auth/operation-not-allowed": "This sign-in option isn't switched on yet. Use email or Google for now.",
+    "auth/account-exists-with-different-credential": "You already have an account with this email. Sign in with Google or email, then you can use it here.",
+    "auth/unauthorized-domain": "Sign-in isn't set up for this address yet.",
   };
   return Object.assign(new Error(m[c] || e?.message || "Something went wrong."), { code: c });
 };
@@ -33,12 +40,25 @@ export function createFirebaseApi(config, appConfig = {}) {
   const uid = () => auth.currentUser?.uid || null;
   let titleCache = null;
 
-  // First Google sign-in: save the viewer's name (also after coming back from Google's page).
+  // First sign-in with Google, Facebook or a mobile number: save the viewer's name (also after coming back from a redirect).
   async function firstGoogle(user) {
     if (!user) return;
     const ref = doc(db, "users", user.uid);
-    if (!(await getDoc(ref)).exists()) { await setDoc(ref, { name: user.displayName || "Viewer", createdAt: serverTimestamp() }); api.track?.("signup"); }
+    if (!(await getDoc(ref)).exists()) { await setDoc(ref, { name: user.displayName || (user.phoneNumber ? "Viewer " + user.phoneNumber.slice(-4) : "Viewer"), ...(user.phoneNumber ? { phone: user.phoneNumber } : {}), createdAt: serverTimestamp() }); api.track?.("signup"); }
   }
+  // The installed iPhone app (home-screen) can't open pop-ups: go to the provider's page and come back instead.
+  const iosApp = () => /iphone|ipad|ipod/i.test(navigator.userAgent) && (navigator.standalone === true || matchMedia("(display-mode: standalone)").matches);
+  async function popupOrRedirect(p) {
+    if (iosApp()) return signInWithRedirect(auth, p);
+    let r;
+    try { r = await signInWithPopup(auth, p); }
+    catch (e) { if (["auth/popup-blocked", "auth/operation-not-supported-in-this-environment", "auth/web-storage-unsupported"].includes(e.code)) return signInWithRedirect(auth, p); throw e; }
+    await firstGoogle(r.user);
+    return r.user;
+  }
+  // Mobile number + OTP. Each try gets a fresh hidden box for the invisible reCAPTCHA check.
+  let phoneVerifier = null, phoneResult = null, phoneBox = null;
+  const resetPhoneCheck = () => { try { phoneVerifier?.clear(); } catch { /* already gone */ } phoneVerifier = null; phoneBox?.remove(); phoneBox = null; };
   getRedirectResult(auth).then((r) => firstGoogle(r?.user)).catch((e) => console.warn("google redirect", e.code || e.message));
 
   // Wake the free Render service early so the first play isn't held up by its cold start.
@@ -60,7 +80,7 @@ export function createFirebaseApi(config, appConfig = {}) {
   const api = {
     mode: "live",
     onAuth(cb) {
-      return onAuthStateChanged(auth, (u) => cb(u ? { uid: u.uid, email: u.email, name: u.displayName || (u.email || "").split("@")[0], emailVerified: u.emailVerified } : null));
+      return onAuthStateChanged(auth, (u) => cb(u ? { uid: u.uid, email: u.email || "", phone: u.phoneNumber || "", name: u.displayName || (u.email || "").split("@")[0] || (u.phoneNumber ? "Viewer " + u.phoneNumber.slice(-4) : "Viewer"), emailVerified: u.emailVerified || !u.email } : null));
     },
     signUp: wrap(async (name, email, pass) => {
       const { user } = await createUserWithEmailAndPassword(auth, email, pass);
@@ -71,14 +91,18 @@ export function createFirebaseApi(config, appConfig = {}) {
       return user;
     }),
     signIn: wrap((email, pass) => signInWithEmailAndPassword(auth, email, pass)),
-    google: wrap(async () => {
-      const p = new GoogleAuthProvider(); p.setCustomParameters({ prompt: "select_account" });
-      // The installed iPhone app (home-screen) can't open pop-ups: go to Google and come back instead.
-      const iosApp = /iphone|ipad|ipod/i.test(navigator.userAgent) && (navigator.standalone === true || matchMedia("(display-mode: standalone)").matches);
-      if (iosApp) return signInWithRedirect(auth, p);
-      let r;
-      try { r = await signInWithPopup(auth, p); }
-      catch (e) { if (["auth/popup-blocked", "auth/operation-not-supported-in-this-environment", "auth/web-storage-unsupported"].includes(e.code)) return signInWithRedirect(auth, p); throw e; }
+    google: wrap(async () => { const p = new GoogleAuthProvider(); p.setCustomParameters({ prompt: "select_account" }); return popupOrRedirect(p); }),
+    facebook: wrap(async () => { const p = new FacebookAuthProvider(); p.addScope("email"); return popupOrRedirect(p); }),
+    phoneStart: wrap(async (number) => {
+      resetPhoneCheck();
+      phoneBox = document.createElement("div"); phoneBox.id = "lm-recaptcha-" + Date.now(); document.body.appendChild(phoneBox);
+      phoneVerifier = new RecaptchaVerifier(auth, phoneBox, { size: "invisible" });
+      try { phoneResult = await signInWithPhoneNumber(auth, number, phoneVerifier); }
+      catch (e) { resetPhoneCheck(); throw e; }
+    }),
+    phoneConfirm: wrap(async (code) => {
+      if (!phoneResult) throw Object.assign(new Error("Send the OTP first."), { code: "auth/no-otp" });
+      const r = await phoneResult.confirm(code); phoneResult = null; resetPhoneCheck();
       await firstGoogle(r.user);
       return r.user;
     }),

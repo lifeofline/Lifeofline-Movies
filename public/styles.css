@@ -453,3 +453,14 @@ html { overflow-x: clip; }
 @media (prefers-reduced-motion: reduce) { .ga-arrow { animation: none; } }
 /* Inside the Google Play / App Store app: Premium isn't sold there (store billing rules). */
 .store-app a[href="#plans"], .store-app [data-subscribe] { display: none !important; }
+
+/* Sign-in options: mobile number, Google, Facebook */
+.auth-alt { display: grid; gap: 10px; margin-top: 4px; }
+.auth-alt .or { text-align: center; margin: 2px 0; }
+.ai { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; font-weight: 800; font-size: 13px; line-height: 1; }
+.ai.g { background: #fff; color: #4285f4; }
+.ai.fb { background: #1877f2; color: #fff; font-family: Arial, sans-serif; }
+.ph-row { display: flex; align-items: stretch; gap: 0; }
+.ph-cc { display: grid; place-items: center; padding: 0 12px; background: var(--ink-3); border: 1px solid var(--line); border-right: 0; border-radius: 10px 0 0 10px; color: var(--fg); font-weight: 600; }
+.ph-row input { border-radius: 0 10px 10px 0 !important; }
+.grecaptcha-badge { visibility: hidden; }

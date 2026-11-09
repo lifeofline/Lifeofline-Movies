@@ -478,7 +478,10 @@ function vSignin(mode = "in") {
       <p class="err" id="aerr" hidden></p>
       <button class="btn gold wide" type="submit" data-nav>${up ? "Create account" : reset ? "Email me a reset link" : "Sign in"}</button>
     </form>
-    ${reset ? "" : `<button class="btn ghost wide" data-google data-nav>Continue with Google</button>`}
+    ${reset ? "" : `<div class="auth-alt"><p class="small or">or</p>
+      <button class="btn ghost wide" data-phone data-nav>📱 Continue with mobile number</button>
+      <button class="btn ghost wide" data-google data-nav><span class="ai g" aria-hidden="true">G</span> Continue with Google</button>
+      <button class="btn ghost wide" data-facebook data-nav><span class="ai fb" aria-hidden="true">f</span> Continue with Facebook</button></div>`}
     <p class="small">${up ? `Have an account? <a href="#signin">Sign in</a>` : `New here? <a href="#signup">Create an account</a>`}${up || reset ? "" : ` · <a href="#reset">Forgot password?</a>`}</p>
     ${up ? `<p class="small">By continuing you agree to the <a href="terms.html">Terms</a> and <a href="privacy.html">Privacy Policy</a>.</p>` : ""}</div>`;
 }
@@ -489,7 +492,7 @@ function vAccount() {
   const adult = S.profile?.adult;
   return `<div class="ptitle"><h1>Account</h1>${S.premium ? `<span class="badge prem">Premium</span>` : `<span class="badge free">Free with ads</span>`}</div>
   <div class="cards">
-    ${S.user ? `<div class="card"><h3>${esc(S.user.name || "You")}</h3><div class="kv"><span>Email</span><span>${esc(S.user.email || "")}</span></div>
+    ${S.user ? `<div class="card"><h3>${esc(S.user.name || "You")}</h3>${S.user.email ? `<div class="kv"><span>Email</span><span>${esc(S.user.email)}</span></div>` : ""}${S.user.phone ? `<div class="kv"><span>Mobile</span><span>${esc(S.user.phone)}</span></div>` : ""}
       ${S.user.emailVerified || DEMO ? "" : `<p class="small">Check your inbox to verify your email. <button class="link" data-verify>Send again</button></p>`}
       <button class="btn ghost" data-signout data-nav>Sign out</button></div>`
     : `<div class="card hl"><h3>You're browsing as a guest</h3><p class="small">Everything is open to explore and free titles play right away. A free account saves your place in every title, keeps My List on all your devices, and is needed for Premium.</p>
@@ -678,10 +681,57 @@ function confirmSheet(html, okLabel, onOk) {
   return ov;
 }
 
+// Mobile number + OTP: one sheet, two steps (send the SMS, then type the 6-digit code).
+function phoneSheet() {
+  $$(".sheet-ov.phone").forEach((x) => x.remove());
+  const ov = document.createElement("div"); ov.className = "sheet-ov phone";
+  ov.innerHTML = `<div class="sheet" role="dialog" aria-label="Continue with mobile number"><span class="eyebrow">Lifeofline Movies</span><h2>Continue with mobile number</h2>
+    <p class="small" style="margin:0">We'll send a 6-digit OTP by SMS. New here? This creates your free account.</p>
+    <label class="f">Mobile number<div class="ph-row"><span class="ph-cc">+91</span><input id="ph-num" type="tel" inputmode="numeric" autocomplete="tel-national" maxlength="12" placeholder="98765 43210" data-nav></div></label>
+    <label class="f" id="ph-code-wrap" hidden>OTP<input id="ph-code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="6-digit code" data-nav></label>
+    <p class="err" id="ph-err" hidden></p>
+    <button class="btn gold wide" data-ph="send" data-nav>Send OTP</button>
+    <button class="btn gold wide" data-ph="verify" hidden data-nav>Verify and continue</button>
+    <button class="link" data-ph="resend" hidden>Resend OTP</button>
+    <p class="small" style="margin:0">Standard SMS rates may apply. Protected by reCAPTCHA: Google <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Privacy</a> and <a href="https://policies.google.com/terms" target="_blank" rel="noopener">Terms</a> apply.</p>
+    <button class="btn ghost wide" data-ph="close" data-nav>Cancel</button></div>`;
+  document.body.append(ov);
+  let timer = 0;
+  const q = (s) => $(s, ov), err = (m) => { q("#ph-err").textContent = m; q("#ph-err").hidden = !m; };
+  const close = () => { clearInterval(timer); ov.remove(); };
+  async function send(btn) {
+    const n = q("#ph-num").value.replace(/\D/g, "").replace(/^(?:91|0)(?=\d{10}$)/, "");
+    if (!/^[6-9]\d{9}$/.test(n)) return err("Enter your 10-digit mobile number.");
+    btn.disabled = true; err("");
+    try {
+      await api.phoneStart("+91" + n);
+      q("[data-ph=send]").hidden = true; q("#ph-code-wrap").hidden = false; q("[data-ph=verify]").hidden = false; q("#ph-code").focus();
+      const rs = q("[data-ph=resend]"); let left = 30; rs.hidden = false; rs.disabled = true; rs.textContent = `Resend OTP in ${left}s`;
+      clearInterval(timer); timer = setInterval(() => { left--; if (left <= 0) { clearInterval(timer); rs.disabled = false; rs.textContent = "Resend OTP"; } else rs.textContent = `Resend OTP in ${left}s`; }, 1000);
+    } catch (e) { err(e.message); }
+    finally { btn.disabled = false; }
+  }
+  ov.addEventListener("click", async (e) => {
+    if (e.target === ov) return close();
+    const b = e.target.closest("[data-ph]"); if (!b) return;
+    const a = b.dataset.ph;
+    if (a === "close") close();
+    else if (a === "send") send(b);
+    else if (a === "resend") { q("#ph-code-wrap").hidden = true; q("[data-ph=verify]").hidden = true; b.hidden = true; q("[data-ph=send]").hidden = false; send(q("[data-ph=send]")); }
+    else if (a === "verify") {
+      const code = q("#ph-code").value.replace(/\D/g, ""); if (code.length !== 6) return err("Enter the 6-digit OTP.");
+      b.disabled = true; err("");
+      try { await api.phoneConfirm(code); close(); toast("Signed in."); } catch (er) { err(er.message); b.disabled = false; }
+    }
+  });
+  q("#ph-code").addEventListener("input", (e) => { if (e.target.value.replace(/\D/g, "").length === 6) q("[data-ph=verify]").click(); });
+  q("#ph-num").focus();
+}
+
 const pinHash = async (pin) => { const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("lm-kids:" + pin)); return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join(""); };
 
 document.addEventListener("click", async (e) => {
-  const el = e.target.closest("[data-play],[data-trailer],[data-lang],[data-avail],[data-hero],[data-listtog],[data-share],[data-subscribe],[data-signout],[data-cancel],[data-dob],[data-kidson],[data-kidsoff],[data-tvtog],[data-google],[data-verify],[data-claim],[data-demo-reset]");
+  const el = e.target.closest("[data-play],[data-trailer],[data-lang],[data-avail],[data-hero],[data-listtog],[data-share],[data-subscribe],[data-signout],[data-cancel],[data-dob],[data-kidson],[data-kidsoff],[data-tvtog],[data-google],[data-facebook],[data-phone],[data-verify],[data-claim],[data-demo-reset]");
   if (!el) return;
   if (el.dataset.play) return play(el.dataset.play, el.dataset.ep);
   if (el.dataset.trailer) return play(el.dataset.trailer, null, true);
@@ -720,6 +770,8 @@ document.addEventListener("click", async (e) => {
   }
   if (el.hasAttribute("data-tvtog")) { S.tv = !S.tv; store.set("tv", S.tv); return route(); }
   if (el.hasAttribute("data-google")) { try { await api.google(); } catch (er) { const p = $("#aerr"); if (p) { p.textContent = er.message; p.hidden = false; } } return; }
+  if (el.hasAttribute("data-facebook")) { try { await api.facebook(); } catch (er) { const p = $("#aerr"); if (p) { p.textContent = er.message; p.hidden = false; } } return; }
+  if (el.hasAttribute("data-phone")) return phoneSheet();
   if (el.hasAttribute("data-verify")) { try { await api.sendVerify(); toast("Verification email sent"); } catch (er) { toast(er.message); } return; }
   if (el.hasAttribute("data-claim")) { try { await api.claimAdmin(); S.admin = true; toast("You're an admin now"); location.hash = "#admin"; } catch (er) { toast(er.message, 4000); } return; }
   if (el.hasAttribute("data-demo-reset")) { api.resetDemo?.(); location.reload(); }
