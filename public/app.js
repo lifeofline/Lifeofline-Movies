@@ -174,6 +174,8 @@ function vHome() {
   const fill = [], d0 = all.filter((t) => isDemo(t) && art(t)), dq = [...d0.slice(d0.length >> 1), ...d0.slice(0, d0.length >> 1)], cq = all.filter((t) => isConcept(t) && art(t));
   while (dq.length || cq.length) { if (cq.length) fill.push(cq.shift()); if (dq.length) fill.push(dq.shift()); }
   const pool = [...new Set([...ready.filter(art), ...all.filter((t) => isSoon(t) && !isConcept(t) && art(t)), ...fill])].slice(0, 8);
+  // House promo for our artist app, shown as the second banner slide (not in kids mode).
+  if (pool.length && !S.kids?.on) pool.splice(1, 0, AC_PROMO);
   const cont = Object.entries(S.progress).sort((a, b) => b[1].at - a[1].at).map(([id]) => byId(id)).filter(Boolean).filter((t) => visible().includes(t) && avail(t));
   const list = S.list.map(byId).filter(Boolean);
   const newest = [...R].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0) || (a.order ?? 999) - (b.order ?? 999));
@@ -210,8 +212,28 @@ function planStrip(ready) {
     ${faqHtml(ready, 3)}</section>`;
 }
 // Full-width banner that rotates through up to 6 titles, playing each one's teaser, like the big streaming apps.
+const AC_PROMO = { promo: true, id: "artistcart", title: "ArtistCart", link: "https://lifeofline.com", art: "posters/artistcart-promo.jpg" };
+function promoSlide(h, i, n) {
+  const bg = `background-image:url('${h.art}')`;
+  return `<article class="slide promo ${i === 0 ? "on" : ""}" data-i="${i}" aria-roledescription="slide" aria-label="${i + 1} of ${n}: ArtistCart app" ${i ? 'aria-hidden="true"' : ""}>
+      <div class="sbg" style="${bg}"></div>
+      <a class="sart" href="${h.link}" target="_blank" rel="noopener" style="${bg};background-size:cover;background-position:center" aria-label="Open ArtistCart"></a>
+      <div class="hshade"></div>
+      <div class="hcopy">
+        <span class="eyebrow">From Lifeofline · ArtistCart app</span>
+        <h1>Free to work? Get booked.</h1>
+        <div class="meta"><span class="rating">Free</span><span>Actors · Models · Dancers · Musicians · Crew</span></div>
+        <p>The app for India's artists. Show makers you're free, get offers, and find castings, auditions and workshops in your city. Production houses and creators can post what they need.</p>
+        <div class="row">
+          <a class="btn gold" href="${h.link}" target="_blank" rel="noopener">Join ArtistCart free</a>
+          <a class="btn ghost" href="${h.link}" target="_blank" rel="noopener">I'm hiring</a>
+        </div>
+      </div>
+    </article>`;
+}
 function heroCarousel(pool) {
   const slide = (h, i) => {
+    if (h.promo) return promoSlide(h, i, pool.length);
     // A purpose-made 16:9 banner fills the whole slide. The demo series' landscape images are text cards with the
     // poster inside, which get cropped and zoomed when stretched to fill, so those slides use the poster layout.
     const wide = !!h.banner && !isDemo(h);
