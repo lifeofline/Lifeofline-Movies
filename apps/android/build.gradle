@@ -1,0 +1,5 @@
+// Lifeofline Movies for Google Play: a Trusted Web Activity that opens https://movies.lifeofline.com full-screen in Chrome.
+// Built by .github/workflows/android.yml; nothing to build on your own computer.
+plugins {
+    id "com.android.application" version "8.11.1" apply false
+}

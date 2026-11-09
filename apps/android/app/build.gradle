@@ -1,0 +1,59 @@
+plugins { id "com.android.application" }
+
+// Change the site or colours here. The version code is set by the build (each Play upload needs a higher one).
+def twa = [
+    host           : "movies.lifeofline.com",
+    launchUrl      : "https://movies.lifeofline.com/?src=twa#home",
+    appName        : "Lifeofline Movies",
+    themeColor     : "#140F1C",
+    backgroundColor: "#140F1C",
+]
+
+android {
+    namespace "com.lifeofline.movies"
+    compileSdk 36
+
+    defaultConfig {
+        applicationId "com.lifeofline.movies"
+        minSdk 24 // Play automatic protection needs 24 or higher (Android 7.0+)
+        targetSdk 36
+        versionCode((System.getenv("VERSION_CODE") ?: "1") as int)
+        versionName(System.getenv("VERSION_NAME") ?: "1.0.0")
+
+        resValue "string", "appName", twa.appName
+        resValue "string", "launchUrl", twa.launchUrl
+        resValue "string", "hostName", twa.host
+        resValue "string", "providerAuthority", "com.lifeofline.movies.fileprovider"
+        resValue "string", "assetStatements", "[{ \\\"relation\\\": [\\\"delegate_permission/common.handle_all_urls\\\"], \\\"target\\\": {\\\"namespace\\\": \\\"web\\\", \\\"site\\\": \\\"https://${twa.host}\\\"}}]"
+        resValue "color", "colorPrimary", twa.themeColor
+        resValue "color", "navigationColor", twa.themeColor
+        resValue "color", "backgroundColor", twa.backgroundColor
+        manifestPlaceholders = [hostName: twa.host]
+    }
+
+    signingConfigs {
+        release {
+            // The upload key comes from GitHub secrets during the cloud build (see apps/STORES.md).
+            storeFile file(System.getenv("KEYSTORE_FILE") ?: "upload.jks")
+            storePassword System.getenv("KEYSTORE_PASSWORD") ?: ""
+            keyAlias "upload"
+            keyPassword System.getenv("KEYSTORE_PASSWORD") ?: ""
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation "com.google.androidbrowserhelper:androidbrowserhelper:2.7.4"
+}

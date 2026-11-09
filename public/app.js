@@ -9,6 +9,7 @@ import { vPitch, slotRail } from "./pitch.js";
 import { LANGS, KINDS, KIDS_OK, freeEpisode } from "./access.js";
 import { openPlayer } from "./player.js";
 import { createHelp } from "./help-widget.js";
+import { initInstall, installCard, markEngaged, STORE_APP } from "./install.js";
 
 const DEMO = String(firebaseConfig.apiKey || "").startsWith("PASTE");
 const api = DEMO ? (await import("./api-demo.js")).createDemoApi() : (await import("./api-firebase.js")).createFirebaseApi(firebaseConfig, appConfig);
@@ -339,6 +340,7 @@ function vSearch(q = "") {
 }
 
 async function vTitle(id) {
+  markEngaged();
   const t = withStarter(byId(id) || (await api.title(id).catch(() => null)));
   if (!t) return empty("This title isn't available.", `<a class="btn ghost" href="#home">Go home</a>`);
   if (S.kids?.on && !KIDS_OK.has(t.rating)) return empty(`This title is rated ${esc(t.rating)}. Leave Kids mode to watch it.`, `<a class="btn ghost" href="#account">Account</a>`);
@@ -436,6 +438,9 @@ function faqHtml(ready, limit = 99) {
 
 function vPlans() {
   const s = S.sub, active = S.premium;
+  // Store apps (Google Play / App Store): Premium isn't sold inside them; people who have it just sign in.
+  if (STORE_APP) return `<div class="ptitle"><div><span class="eyebrow">Premium</span><h1>${active ? "You have Premium" : "Premium isn't available in this app"}</h1></div></div>
+    <div class="cards"><div class="card hl">${active ? `<p>Everything is unlocked on this account${s?.until ? ` till ${day(s.until)}` : ""}.</p>` : `<p>Free titles play right away. If you already have Premium, sign in with the same account and everything unlocks here too.</p>${S.user ? "" : `<a class="btn gold" href="#signin" data-nav>Sign in</a>`}`}</div></div>`;
   const ready = visible().filter((t) => avail(t) && !isDemo(t));
   return `<div class="ptitle"><div><span class="eyebrow">Plans</span><h1>One payment a year. Everything unlocked.</h1></div></div>
   <div class="plans two">
@@ -488,6 +493,7 @@ function vAccount() {
       ${S.kids?.on ? `<button class="btn ghost" data-kidsoff data-nav>Leave Kids mode</button>` : `<label class="f">Choose a 4-digit PIN<input id="kpin" inputmode="numeric" maxlength="4" pattern="\\d{4}" autocomplete="off" data-nav></label><button class="btn ghost" data-kidson data-nav>Turn on Kids mode</button>`}</div>
     <div class="card"><h3>This device</h3><div class="kv"><span>TV layout</span><span>${S.tv ? "On" : "Off"}</span></div>
       <p class="small">Big tiles and remote-control arrows. Turns on by itself on Android TV, Fire TV and smart TVs.</p><button class="btn ghost" data-tvtog data-nav>${S.tv ? "Turn off" : "Turn on"} TV layout</button></div>
+    ${S.tv ? "" : `<div class="card"><h3>Get the app</h3><div id="install-slot">${installCard()}</div></div>`}
     <div class="card"><h3>Help</h3><p class="small">Quick answers any time, or chat, call or WhatsApp the Lifeofline Helpdesk (9 AM – 9 PM, every day). Complaints about a title: we reply within 24 hours and resolve within 15 days.</p>
       <a class="btn gold" href="#help" data-nav>💬 Chat support</a>
       <a class="btn ghost" href="#grievance" data-nav>Contact the grievance officer</a>
@@ -583,6 +589,7 @@ document.addEventListener("focusin", (e) => { if (!S.tv) return; const t = e.tar
 async function play(titleId, epId, trailer = false) {
   const t = withStarter(byId(titleId) || (await api.title(titleId)));
   if (!t) return toast("This title isn't available.");
+  markEngaged();
   if (!trailer && isSoon(t) && !S.admin) return toast(`${t.title} is coming soon. Add it to My List to find it on release.`);
   const eps = S.eps?.id === titleId ? S.eps.eps : await episodesOf(titleId);
   S.eps = { id: titleId, eps };
@@ -599,6 +606,7 @@ async function play(titleId, epId, trailer = false) {
 }
 
 async function subscribe(btn) {
+  if (STORE_APP) { location.hash = "#plans"; return; }
   if (!S.user) return joinSheet(`Create a free account to get Premium`, `Your ₹${PRICE} yearly plan is linked to your account, so it works on your phone, computer and TV.`, "#plans");
   if (btn) btn.disabled = true;
   try {
@@ -760,6 +768,7 @@ document.addEventListener("keydown", (e) => {
 
 /* ---------- start ---------- */
 if ("serviceWorker" in navigator && !DEMO && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
+initInstall();
 shell("home");
 // Chat support: the helper answers right away; "Chat with us" reaches the Lifeofline Helpdesk (shared with ArtistCart).
 const HELPDESK = { email: appConfig.supportEmail || "ibmhclms@gmail.com" };

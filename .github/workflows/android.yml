@@ -1,0 +1,59 @@
+# Builds the Google Play file (.aab) for Lifeofline Movies in the cloud.
+# Run it from GitHub → Actions → "Android app (Google Play)" → Run workflow.
+# The finished file is under the run's "Artifacts": LifeoflineMovies-android.
+name: Android app (Google Play)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: "Version shown in Play (e.g. 1.0.0)"
+        required: true
+        default: "1.0.0"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/android
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+
+      - name: Unpack the upload key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::error::Add the ANDROID_KEYSTORE_BASE64 and ANDROID_KEYSTORE_PASSWORD secrets first (see apps/GOOGLE-PLAY.md)."
+            exit 1
+          fi
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+
+      - name: Build the Play bundle
+        env:
+          KEYSTORE_FILE: ${{ runner.temp }}/upload.jks
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          VERSION_CODE: ${{ github.run_number }}
+          VERSION_NAME: ${{ inputs.version_name }}
+        run: gradle bundleRelease --no-daemon --stacktrace
+
+      - name: Show the signing fingerprint (must match assetlinks.json)
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: keytool -list -v -keystore "$RUNNER_TEMP/upload.jks" -alias upload -storepass "$KEYSTORE_PASSWORD" | grep SHA256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LifeoflineMovies-android
+          path: apps/android/app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error

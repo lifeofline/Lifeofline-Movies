@@ -1,17 +1,114 @@
 {
+  "id": "/",
   "name": "Lifeofline Movies",
   "short_name": "Lifeofline",
-  "description": "Indian short dramas, movies and web series. Free with ads, or everything for ₹499 a year.",
-  "start_url": "./#home",
+  "description": "Indian short dramas, movies and web series, and Lifeofline Originals like Ghalib Zinda Hai. Free with ads, or everything for ₹999 a year.",
+  "start_url": "./?src=pwa#home",
   "scope": "./",
   "display": "standalone",
+  "display_override": [
+    "standalone"
+  ],
+  "launch_handler": {
+    "client_mode": "focus-existing"
+  },
   "orientation": "any",
   "background_color": "#140f1c",
   "theme_color": "#140f1c",
-  "categories": ["entertainment"],
+  "lang": "en-IN",
+  "dir": "ltr",
+  "categories": [
+    "entertainment",
+    "video"
+  ],
+  "prefer_related_applications": false,
   "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
-    { "src": "icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    {
+      "src": "icon-96.png",
+      "sizes": "96x96",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-180.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Ghalib Zinda Hai",
+      "short_name": "Ghalib",
+      "url": "./#t/ghalib-zinda-hai",
+      "icons": [
+        {
+          "src": "icon-96.png",
+          "sizes": "96x96"
+        }
+      ]
+    },
+    {
+      "name": "Reels: short dramas",
+      "short_name": "Reels",
+      "url": "./#reels",
+      "icons": [
+        {
+          "src": "icon-96.png",
+          "sizes": "96x96"
+        }
+      ]
+    },
+    {
+      "name": "Search",
+      "url": "./#search",
+      "icons": [
+        {
+          "src": "icon-96.png",
+          "sizes": "96x96"
+        }
+      ]
+    },
+    {
+      "name": "My account",
+      "short_name": "Account",
+      "url": "./#account",
+      "icons": [
+        {
+          "src": "icon-96.png",
+          "sizes": "96x96"
+        }
+      ]
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "screen-phone-title.png",
+      "sizes": "1080x1920",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Ghalib Zinda Hai: Mirza Ghalib recites his ghazals"
+    },
+    {
+      "src": "screen-wide-home.png",
+      "sizes": "1920x1080",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Watch on your computer or TV"
+    }
   ]
 }

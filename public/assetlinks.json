@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.lifeofline.movies",
+      "sha256_cert_fingerprints": [
+        "0A:0D:6D:A1:17:1D:B0:75:62:B7:92:3F:28:03:A1:4C:C9:A6:5B:1C:8D:D0:35:CC:1E:9C:53:FA:C8:C5:F6:19"
+      ]
+    }
+  }
+]

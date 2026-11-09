@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Folders the app may hand to Chrome. twa_splash is where the library saves the splash image
+     before passing it to Chrome; without it the app crashes as soon as it opens. -->
+<paths>
+    <files-path name="twa_splash" path="twa_splash/" />
+    <files-path name="twa_shared" path="twa_shared/" />
+</paths>

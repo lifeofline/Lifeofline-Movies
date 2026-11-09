@@ -414,3 +414,42 @@ html { overflow-x: clip; }
 .steps li { display: grid; grid-template-columns: 34px 1fr; gap: 12px; align-items: start; }
 .steps li > span { width: 34px; height: 34px; border-radius: 50%; background: var(--gold); color: var(--gold-ink); display: grid; place-items: center; font-weight: 800; }
 .steps p { margin: 2px 0 0; }
+
+/* ---------- Get the app: bar, install sheet, steps (same flow as ArtistCart) ---------- */
+#getapp-bar { position: relative; z-index: 60; display: flex; align-items: center; gap: 10px; padding: 8px max(12px, env(safe-area-inset-left, 0px)); padding-top: calc(8px + env(safe-area-inset-top, 0px)); background: var(--ink-3); border-bottom: 1px solid var(--line); }
+#getapp-bar img { border-radius: 8px; flex: none; }
+#getapp-bar .ga-txt { flex: 1; min-width: 0; display: grid; line-height: 1.25; }
+#getapp-bar .ga-txt b { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#getapp-bar .ga-txt span { font-size: 12px; color: var(--muted); }
+.ga-x { background: none; border: 0; color: var(--muted); font-size: 16px; padding: 6px 8px; }
+#getapp-sheet { position: fixed; inset: 0; z-index: 200; background: rgba(8, 5, 12, .72); display: grid; place-items: end center; padding: 12px; overflow: auto; }
+#getapp-sheet[hidden] { display: none !important; }
+.ga-card { width: min(560px, 100%); background: var(--ink-2); border: 1px solid var(--line); border-radius: 16px; padding: 18px; display: grid; gap: 12px; margin-bottom: env(safe-area-inset-bottom, 0px); max-height: calc(100dvh - 24px); overflow: auto; }
+@media (min-width: 700px) { #getapp-sheet { place-items: center; } }
+.ga-head { display: flex; gap: 12px; align-items: center; }
+.ga-head img { border-radius: 12px; flex: none; }
+.ga-head h2 { font-size: 20px; }
+.ga-big { font-size: 17px; padding-block: 14px; }
+.ga-steps { margin: 0; padding: 0; list-style: none; counter-reset: s; display: grid; gap: 10px; }
+.ga-steps li { counter-increment: s; display: grid; grid-template-columns: 1fr; gap: 8px; background: var(--ink); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.ga-steps li > span::before { content: counter(s) ". "; font-weight: 800; color: var(--gold); }
+.ga-steps li.done-step > span::before { content: "✓ "; color: var(--ok); }
+.ga-steps.pics li { grid-template-columns: 1fr 96px; align-items: center; }
+.ga-pic { width: 96px; height: auto; display: block; }
+.ga-more summary { cursor: pointer; color: var(--gold); font-weight: 600; margin-bottom: 8px; }
+.ios-key { display: inline-flex; align-items: center; gap: 3px; padding: 0 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--ink-3); font-weight: 700; }
+.ga-phone { display: flex; gap: 14px; align-items: center; background: var(--ink); border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+.ga-phone > div:last-child { display: grid; gap: 4px; }
+.ga-qr { width: 120px; height: 120px; flex: none; background: #fff; border-radius: 8px; padding: 4px; }
+.ga-qr svg { width: 100%; height: 100%; display: block; }
+.ga-link { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.ga-link code { font-family: var(--f-mono); font-size: 13px; color: var(--soft); flex: 1; min-width: 0; }
+.ga-point { position: fixed; z-index: 300; display: grid; justify-items: center; gap: 4px; pointer-events: none; }
+.ga-point.bottom { bottom: 12px; } .ga-point.top { top: 8px; flex-direction: column-reverse; }
+.ga-point.center { left: 50%; transform: translateX(-50%); } .ga-point.right { right: 14px; justify-items: end; }
+.ga-bubble { background: var(--gold); color: var(--gold-ink); border-radius: 12px; padding: 10px 14px; font-size: 14px; max-width: 260px; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+.ga-arrow { font-size: 34px; color: var(--gold); animation: ga-bob 1s ease-in-out infinite; }
+@keyframes ga-bob { 50% { transform: translateY(6px); } }
+@media (prefers-reduced-motion: reduce) { .ga-arrow { animation: none; } }
+/* Inside the Google Play / App Store app: Premium isn't sold there (store billing rules). */
+.store-app a[href="#plans"], .store-app [data-subscribe] { display: none !important; }
