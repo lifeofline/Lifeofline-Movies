@@ -9,6 +9,12 @@ const HLS_JS = "https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.15/hls.min.js"
 const RATING_MS = 2800;
 const MIDROLL_MIN_SEC = 600; // titles longer than 10 minutes get one mid-roll for free viewers
 const START_TIMEOUT_MS = 20000; // no picture after this long = show a clear error with Retry
+const ICON_X = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>`;
+const ICON_BACK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4h4"/><text x="12" y="15.5" font-size="7" font-weight="700" fill="currentColor" stroke="none" text-anchor="middle" font-family="system-ui,sans-serif">10</text></svg>`;
+const ICON_FWD = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v4h-4"/><text x="12" y="15.5" font-size="7" font-weight="700" fill="currentColor" stroke="none" text-anchor="middle" font-family="system-ui,sans-serif">10</text></svg>`;
+const ICON_NEXT = `<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" aria-hidden="true"><path d="M6 5v14l9-7zM16 5h2.5v14H16z"/></svg>`;
+const ICON_FS = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>`;
+const ICON_FS_EXIT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>`;
 const track = (P, type, extra = {}) => { try { P.api.track?.(type, { titleId: P.title.id, epId: P.ep?.id || "", ...extra }); } catch { /* best effort */ } };
 
 // A clear message with Retry and Report a problem, in place of a spinner or a black screen.
@@ -34,20 +40,27 @@ export async function openPlayer(opts) {
   const ov = document.createElement("div");
   ov.className = "pov"; ov.setAttribute("role", "dialog"); ov.setAttribute("aria-label", "Player: " + title.title);
   ov.innerHTML = `<div class="pstage ${vertical ? "v" : ""}" id="pstage">
-      <video id="pv" playsinline webkit-playsinline preload="auto" controlslist="nodownload noremoteplayback noplaybackrate" disablepictureinpicture disableremoteplayback></video>
+      <video id="pv" playsinline webkit-playsinline preload="auto" x-webkit-airplay="deny" controlslist="nodownload noremoteplayback noplaybackrate" disablepictureinpicture disableremoteplayback></video>
       <div class="ppv" id="ppv" hidden></div>
+      <div class="pseekfx l" id="pfxl" aria-hidden="true">${ICON_BACK}<span>10 sec</span></div><div class="pseekfx r" id="pfxr" aria-hidden="true">${ICON_FWD}<span>10 sec</span></div>
       <div class="plyr" id="plyr"></div>
-      <div class="ptop"><button class="pic" data-pclose aria-label="Close">✕</button><b id="pname">${esc(title.title)}</b><span class="rating" id="prate">${esc(title.rating || "U")}</span></div>
+      <div class="ptop"><button class="pic" data-pclose aria-label="Close">${ICON_X}</button><div class="pttl"><b id="pname">${esc(title.title)}</b><span class="rating" id="prate">${esc(title.rating || "U")}</span></div>
+        <button class="pbtn pnext" data-pnext id="pnext" hidden aria-label="Next episode">Next<span class="nx-long"> episode</span> ${ICON_NEXT}</button></div>
+      <div class="pmid" id="pmid">
+        <button class="pic big" data-seek="-10" aria-label="Back 10 seconds">${ICON_BACK}</button>
+        <button class="pic huge" data-pp aria-label="Play or pause" id="ppb"></button>
+        <button class="pic big" data-seek="10" aria-label="Forward 10 seconds">${ICON_FWD}</button>
+      </div>
       <div class="pbot" id="pbot">
-        <div class="pbar" id="pbar" role="slider" aria-label="Seek" tabindex="0"><i id="pbuf"></i><i id="pfill"></i><span class="cue" id="pcue" hidden></span></div>
         <div class="pctl">
-          <button class="pic" data-pp aria-label="Play or pause" id="ppb"></button>
-          <button class="pic" data-seek="-10" aria-label="Back 10 seconds">−10</button>
-          <button class="pic" data-seek="10" aria-label="Forward 10 seconds">+10</button>
-          <span class="ptime" id="ptime">0:00</span><span class="pspace"></span>
-          <select id="pq" aria-label="Quality"><option value="-1">Auto</option></select>
-          <button class="pbtn" data-pnext id="pnext" hidden>Next ›</button>
-          <button class="pic" data-pfs aria-label="Full screen">⛶</button>
+          <span class="ptime" id="ptime">0:00</span>
+          <div class="pbar" id="pbar" role="slider" aria-label="Seek" tabindex="0"><div class="ptrack"><i id="pbuf"></i><i id="pfill"></i><span class="cue" id="pcue" hidden></span></div><span class="pknob" id="pknob"></span></div>
+          <span class="ptime" id="pleft">-0:00</span>
+        </div>
+        <div class="pctl">
+          <span class="pspace"></span>
+          <label class="pqual"><span class="sr">Quality</span><select id="pq" aria-label="Quality"><option value="-1">Auto</option></select></label>
+          <button class="pic" data-pfs aria-label="Full screen" id="pfsb">${ICON_FS}</button>
         </div>
       </div>
     </div>`;
@@ -85,6 +98,9 @@ async function start(P, epId, trailer, startAt) {
   P.ep = trailer ? null : (P.episodes || []).find((x) => x.id === r.epId) || { id: r.epId, n: r.n, name: r.name };
   $("#pname", P.ov).textContent = trailer ? `${P.title.title} · ${P.direct ? "Animated poster teaser" : "Trailer"}` : P.title.kind === "movie" ? P.title.title : `${P.title.title} · Ep ${r.n}${P.title.demo ? " · Demo story card" : ""}`;
   const nx = nextEp(P); $("#pnext", P.ov).hidden = !nx;
+  if ("mediaSession" in navigator && window.MediaMetadata) {
+    try { navigator.mediaSession.metadata = new MediaMetadata({ title: $("#pname", P.ov).textContent, artist: "Lifeofline Movies", artwork: P.title.poster ? [{ src: P.title.poster, sizes: "512x512" }] : [{ src: "icon-512.png", sizes: "512x512", type: "image/png" }] }); } catch { /* ignore */ }
+  }
   if (r.poster) P.video.poster = r.poster;
   // Free-preview badge.
   const pv = $("#ppv", P.ov); pv.hidden = !r.preview; pv.textContent = r.preview ? `Free preview · ${r.preview} seconds` : "";
@@ -191,10 +207,13 @@ const ICON_PAUSE = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 4h4
 
 function wire(P) {
   const { ov, video: v } = P;
-  const fill = $("#pfill", ov), buf = $("#pbuf", ov), time = $("#ptime", ov), ppb = $("#ppb", ov), bar = $("#pbar", ov), cue = $("#pcue", ov);
+  const fill = $("#pfill", ov), buf = $("#pbuf", ov), time = $("#ptime", ov), left = $("#pleft", ov), knob = $("#pknob", ov), ppb = $("#ppb", ov), bar = $("#pbar", ov), cue = $("#pcue", ov);
   ppb.innerHTML = ICON_PLAY;
-  const wake = () => { ov.classList.remove("idle"); clearTimeout(P.idleT); P.idleT = setTimeout(() => { if (!v.paused) ov.classList.add("idle"); }, 3200); };
-  v.addEventListener("play", () => { ppb.innerHTML = ICON_PAUSE; wake(); });
+  // Controls appear on a tap and fade after a few seconds of playing (like Netflix / ZEE5); they stay while paused.
+  const hide = () => { if (!v.paused && !P.seeking) ov.classList.add("idle"); };
+  const wake = () => { ov.classList.remove("idle"); clearTimeout(P.idleT); P.idleT = setTimeout(hide, 3500); };
+  P.wake = wake;
+  v.addEventListener("play", () => { ppb.innerHTML = ICON_PAUSE; ppb.setAttribute("aria-label", "Pause"); wake(); });
   v.addEventListener("playing", () => {
     ov.classList.remove("buffering");
     if (!P.started && P.phase === "play") { P.started = true; clearTimeout(P.startT); track(P, P.trailer ? "teaser" : "start"); }
@@ -206,11 +225,11 @@ function wire(P) {
     errCard(P, c === 4 ? "This video format isn't supported here." : c === 3 ? "This video couldn't be decoded." : "This video stopped loading.",
       c === 4 ? "Try the latest Chrome, Safari or Edge, or another device. Please report it so we can check the file." : "Press Retry. If it keeps happening, report it and we'll check the video.", "media-" + (c || "?"));
   });
-  v.addEventListener("pause", () => { ppb.innerHTML = ICON_PLAY; ov.classList.remove("idle"); save(P); });
+  v.addEventListener("pause", () => { ppb.innerHTML = ICON_PLAY; ppb.setAttribute("aria-label", "Play"); ov.classList.remove("idle"); clearTimeout(P.idleT); save(P); });
   v.addEventListener("timeupdate", () => {
     const d = v.duration || 0;
-    fill.style.width = d ? (v.currentTime / d) * 100 + "%" : "0";
-    time.textContent = `${clock(v.currentTime)} / ${clock(d)}`;
+    if (!P.seeking) { const pct = d ? (v.currentTime / d) * 100 : 0; fill.style.width = pct + "%"; knob.style.left = pct + "%"; }
+    time.textContent = clock(v.currentTime); left.textContent = d ? "-" + clock(Math.max(0, d - v.currentTime)) : "";
     if (P.res?.ads && !P.trailer && d > MIDROLL_MIN_SEC) { cue.hidden = P.midDone; cue.style.left = "50%"; }
     if (P.res?.ads && !P.trailer && !P.midDone && d > MIDROLL_MIN_SEC && v.currentTime > d / 2 && P.phase === "play") { P.midDone = true; adBreak(P, "Mid-roll"); }
     if (Date.now() - P.saveT > 10e3) { P.saveT = Date.now(); save(P); }
@@ -227,21 +246,43 @@ function wire(P) {
     layer(P, `<div class="pcard"><span class="eyebrow">Up next</span><h3>Episode ${nx.n}${nx.name && !/^Episode \d+$/.test(nx.name) ? ": " + esc(nx.name) : ""}</h3><p id="pcount">Starts in ${n}s</p><div class="row"><button class="btn gold" data-pgo>Play now</button><button class="btn ghost" data-pclose>Close</button></div></div>`);
     P.countT = setInterval(() => { n--; const c = $("#pcount", ov); if (c) c.textContent = `Starts in ${n}s`; if (n <= 0) { clearInterval(P.countT); goNext(P, nx); } }, 1000);
   });
-  const seekTo = (x) => { const r = bar.getBoundingClientRect(); if (v.duration) v.currentTime = Math.max(0, Math.min(v.duration - 1, ((x - r.left) / r.width) * v.duration)); };
-  bar.addEventListener("click", (e) => seekTo(e.clientX));
+  // Progress bar: tap or drag (finger or mouse); the picture jumps when you let go.
+  const frac = (x) => { const r = bar.getBoundingClientRect(); return Math.max(0, Math.min(1, (x - r.left) / r.width)); };
+  const showAt = (f) => { fill.style.width = f * 100 + "%"; knob.style.left = f * 100 + "%"; if (v.duration) time.textContent = clock(f * v.duration); };
+  bar.addEventListener("pointerdown", (e) => { if (!v.duration) return; P.seeking = true; bar.setPointerCapture?.(e.pointerId); ov.classList.add("dragging"); showAt(frac(e.clientX)); wake(); });
+  bar.addEventListener("pointermove", (e) => { if (P.seeking) showAt(frac(e.clientX)); });
+  const endSeek = (e) => { if (!P.seeking) return; P.seeking = false; ov.classList.remove("dragging"); if (v.duration) v.currentTime = Math.min(v.duration - 1, frac(e.clientX) * v.duration); wake(); };
+  bar.addEventListener("pointerup", endSeek); bar.addEventListener("pointercancel", () => { P.seeking = false; ov.classList.remove("dragging"); });
+  bar.addEventListener("keydown", (e) => { if (!v.duration) return; if (e.key === "ArrowRight") v.currentTime = Math.min(v.duration - 1, v.currentTime + 10); else if (e.key === "ArrowLeft") v.currentTime = Math.max(0, v.currentTime - 10); });
+  const skip = (sec) => { if (!v.duration) return; v.currentTime = Math.max(0, Math.min(v.duration - 1, v.currentTime + sec)); const fx = $(sec < 0 ? "#pfxl" : "#pfxr", ov); fx.classList.remove("on"); void fx.offsetWidth; fx.classList.add("on"); };
   $("#pq", ov).addEventListener("change", (e) => { if (P.hls) P.hls.currentLevel = Number(e.target.value); });
   ["contextmenu", "dragstart", "copy"].forEach((t) => ov.addEventListener(t, (e) => e.preventDefault()));
-  ov.addEventListener("mousemove", wake); ov.addEventListener("touchstart", wake, { passive: true });
+  // Only a real mouse wakes the controls by moving: phones send a fake mouse move just before each tap.
+  ov.addEventListener("pointermove", (e) => { if (e.pointerType === "mouse" && (e.movementX || e.movementY)) wake(); });
 
+  // Tapping the picture: one tap shows/hides the controls; a quick double tap on the left or right third skips 10 seconds.
+  let lastTap = 0, tapT = 0;
+  const onPicture = (e) => e.target === v || e.target.id === "pstage" || e.target.id === "pmid";
   ov.addEventListener("click", (e) => {
-    const b = e.target.closest("button, [data-pclose]");
-    if (!b) { if (e.target === v && P.phase === "play") { v.paused ? playSafe(P) : v.pause(); } return; }
+    const b = e.target.closest("button, [data-pclose], a, select, label");
+    if (!b) {
+      if (!onPicture(e) || P.phase !== "play") return;
+      const r = $("#pstage", ov).getBoundingClientRect(), side = e.clientX < r.left + r.width / 3 ? -1 : e.clientX > r.right - r.width / 3 ? 1 : 0;
+      const now = Date.now();
+      if (side && now - lastTap < 320) { clearTimeout(tapT); lastTap = 0; skip(side * 10); if (!ov.classList.contains("idle")) wake(); return; }
+      lastTap = now;
+      const toggle = () => { if (ov.classList.contains("idle")) wake(); else if (!v.paused) { clearTimeout(P.idleT); ov.classList.add("idle"); } };
+      if (side) { clearTimeout(tapT); tapT = setTimeout(toggle, 260); } else toggle();
+      return;
+    }
+    if (ov.classList.contains("idle") && !b.closest(".plyr")) { wake(); return; } // first tap on hidden controls just shows them
+    wake();
     if (b.hasAttribute("data-pclose")) return closePlayer();
     if (b.hasAttribute("data-pp")) return v.paused ? playSafe(P) : v.pause();
-    if (b.dataset.seek && v.duration) { v.currentTime = Math.max(0, Math.min(v.duration - 1, v.currentTime + Number(b.dataset.seek))); return wake(); }
+    if (b.dataset.seek) return skip(Number(b.dataset.seek));
     if (b.hasAttribute("data-pnext")) return goNext(P, nextEp(P));
     if (b.hasAttribute("data-pgo")) { clearInterval(P.countT); return goNext(P, nextEp(P)); }
-    if (b.hasAttribute("data-pfs")) { const el = $("#pstage", ov); (document.fullscreenElement ? document.exitFullscreen() : el.requestFullscreen?.())?.catch?.(() => {}); return; }
+    if (b.hasAttribute("data-pfs")) return toggleFullscreen(P);
     if (b.hasAttribute("data-pretry")) return start(P, P.ep?.id || P.epId, P.trailer, Math.floor(v.currentTime || 0));
     if (b.hasAttribute("data-preport")) {
       b.disabled = true;
@@ -260,7 +301,7 @@ function wire(P) {
   let y0 = null;
   ov.addEventListener("touchstart", (e) => { if (P.vertical) y0 = e.touches[0].clientY; }, { passive: true });
   ov.addEventListener("touchend", (e) => {
-    if (y0 == null || P.phase !== "play") return; const dy = e.changedTouches[0].clientY - y0; y0 = null;
+    if (y0 == null || P.phase !== "play" || P.seeking) return; const dy = e.changedTouches[0].clientY - y0; y0 = null;
     if (dy < -80) goNext(P, nextEp(P)); else if (dy > 80) goNext(P, prevEp(P));
   });
 
@@ -276,7 +317,19 @@ function wire(P) {
     else if (P.vertical && e.key === "ArrowDown") { e.preventDefault(); goNext(P, nextEp(P)); }
     else if (P.vertical && e.key === "ArrowUp") { e.preventDefault(); goNext(P, prevEp(P)); }
     else if (e.key === "MediaTrackNext" || e.key === "n") goNext(P, nextEp(P));
+    else if (e.key === "f") toggleFullscreen(P);
   };
+  const fsIcon = () => { const on = !!(document.fullscreenElement || document.webkitFullscreenElement); const fb = $("#pfsb", ov); if (fb) { fb.innerHTML = on ? ICON_FS_EXIT : ICON_FS; fb.setAttribute("aria-label", on ? "Exit full screen" : "Full screen"); } };
+  P.onFs = fsIcon; document.addEventListener("fullscreenchange", fsIcon); document.addEventListener("webkitfullscreenchange", fsIcon);
+  // Lock-screen and headphone controls, with the title shown on the phone's lock screen.
+  if ("mediaSession" in navigator) {
+    const ms = navigator.mediaSession;
+    try {
+      ms.setActionHandler("play", () => playSafe(P)); ms.setActionHandler("pause", () => v.pause());
+      ms.setActionHandler("seekbackward", () => skip(-10)); ms.setActionHandler("seekforward", () => skip(10));
+      ms.setActionHandler("nexttrack", () => { const nx = nextEp(P); if (nx) goNext(P, nx); });
+    } catch { /* not every action exists everywhere */ }
+  }
   document.addEventListener("keydown", P.onKey);
   P.onPop = () => teardown(false);
   window.addEventListener("popstate", P.onPop);
@@ -289,11 +342,32 @@ function teardown(fromCode) {
   clearInterval(P.countT); clearTimeout(P.idleT); clearTimeout(P.startT);
   document.removeEventListener("keydown", P.onKey);
   window.removeEventListener("popstate", P.onPop);
+  document.removeEventListener("fullscreenchange", P.onFs); document.removeEventListener("webkitfullscreenchange", P.onFs);
+  try { screen.orientation?.unlock?.(); } catch { /* not supported */ }
+  if ("mediaSession" in navigator) { try { navigator.mediaSession.metadata = null; ["play", "pause", "seekbackward", "seekforward", "nexttrack"].forEach((a) => navigator.mediaSession.setActionHandler(a, null)); } catch { /* ignore */ } }
   try { P.video.pause(); P.hls?.destroy(); P.video.removeAttribute("src"); P.video.load(); } catch { /* ignore */ }
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  else if (document.webkitFullscreenElement) document.webkitExitFullscreen?.();
   P.ov.remove(); document.body.classList.remove("playing");
   if (fromCode) history.back();
   P.onClosed?.();
+}
+
+// Full screen. Android and computers: the whole player, turned sideways for wide titles.
+// iPhone can only make the video itself full screen (Safari's own player; no download or AirPlay there).
+function toggleFullscreen(P) {
+  const ov = P.ov, v = P.video;
+  if (document.fullscreenElement || document.webkitFullscreenElement) {
+    try { screen.orientation?.unlock?.(); } catch { /* ignore */ }
+    return (document.exitFullscreen?.() || document.webkitExitFullscreen?.())?.catch?.(() => {});
+  }
+  const el = ov.requestFullscreen ? ov : ov.webkitRequestFullscreen ? ov : null;
+  if (el) {
+    const go = el.requestFullscreen ? el.requestFullscreen({ navigationUI: "hide" }) : el.webkitRequestFullscreen();
+    return Promise.resolve(go).then(() => { if (!P.vertical && screen.orientation?.lock && innerHeight > innerWidth) screen.orientation.lock("landscape").catch(() => {}); }).catch(() => {});
+  }
+  if (v.webkitEnterFullscreen) { try { v.webkitEnterFullscreen(); } catch { toast("Turn your phone sideways for a bigger picture."); } return; }
+  toast("Full screen isn't available in this browser.");
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
