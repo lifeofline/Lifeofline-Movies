@@ -46,10 +46,12 @@ export function createFirebaseApi(config, appConfig = {}) {
     const ref = doc(db, "users", user.uid);
     if (!(await getDoc(ref)).exists()) { await setDoc(ref, { name: user.displayName || (user.phoneNumber ? "Viewer " + user.phoneNumber.slice(-4) : "Viewer"), ...(user.phoneNumber ? { phone: user.phoneNumber } : {}), createdAt: serverTimestamp() }); api.track?.("signup"); }
   }
-  // The installed iPhone app (home-screen) can't open pop-ups: go to the provider's page and come back instead.
-  const iosApp = () => /iphone|ipad|ipod/i.test(navigator.userAgent) && (navigator.standalone === true || matchMedia("(display-mode: standalone)").matches);
+  // Phones and tablets: pop-ups lose their link back to the page (Firebase then says "closed before it finished"),
+  // so go to the provider's page and come back. This works because sign-in runs on our own address (see app.js authConfig).
+  const ownDomain = config.authDomain === location.host;
+  const mobile = () => /iphone|ipad|ipod|android/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1) || navigator.standalone === true || matchMedia("(display-mode: standalone)").matches;
   async function popupOrRedirect(p) {
-    if (iosApp()) return signInWithRedirect(auth, p);
+    if (mobile() && ownDomain) { try { sessionStorage.setItem("lm-auth-redirect", location.hash || "#home"); } catch {} return signInWithRedirect(auth, p); }
     let r;
     try { r = await signInWithPopup(auth, p); }
     catch (e) { if (["auth/popup-blocked", "auth/operation-not-supported-in-this-environment", "auth/web-storage-unsupported"].includes(e.code)) return signInWithRedirect(auth, p); throw e; }
@@ -59,7 +61,11 @@ export function createFirebaseApi(config, appConfig = {}) {
   // Mobile number + OTP. Each try gets a fresh hidden box for the invisible reCAPTCHA check.
   let phoneVerifier = null, phoneResult = null, phoneBox = null;
   const resetPhoneCheck = () => { try { phoneVerifier?.clear(); } catch { /* already gone */ } phoneVerifier = null; phoneBox?.remove(); phoneBox = null; };
-  getRedirectResult(auth).then((r) => firstGoogle(r?.user)).catch((e) => console.warn("google redirect", e.code || e.message));
+  // Back from Google/Facebook's page: save a new viewer, or show why it didn't work.
+  getRedirectResult(auth).then((r) => firstGoogle(r?.user)).catch((e) => {
+    console.warn("sign-in redirect", e.code || e.message);
+    if (e.code && e.code !== "auth/no-auth-event") setTimeout(() => window.dispatchEvent(new CustomEvent("lm-auth-error", { detail: friendly(e).message })), 800);
+  });
 
   // Wake the free Render service early so the first play isn't held up by its cold start.
   if (base) fetch(base + "/health").catch(() => {});

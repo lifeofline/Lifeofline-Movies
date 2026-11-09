@@ -832,6 +832,8 @@ document.addEventListener("keydown", (e) => {
 /* ---------- start ---------- */
 if ("serviceWorker" in navigator && !DEMO && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
 initInstall();
+// A Google/Facebook sign-in that came back with a problem: say so on the sign-in screen.
+window.addEventListener("lm-auth-error", (e) => { const p = $("#aerr"); if (p) { p.textContent = e.detail; p.hidden = false; } else toast(e.detail, 5000); });
 shell("home");
 // Chat support: the helper answers right away; "Chat with us" reaches the Lifeofline Helpdesk (shared with ArtistCart).
 const HELPDESK = { email: appConfig.supportEmail || "ibmhclms@gmail.com" };
