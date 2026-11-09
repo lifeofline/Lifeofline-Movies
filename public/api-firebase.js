@@ -3,7 +3,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
 import {
   getAuth, onAuthStateChanged, createUserWithEmailAndPassword, signInWithEmailAndPassword, GoogleAuthProvider,
-  signInWithPopup, signInWithRedirect, sendPasswordResetEmail, sendEmailVerification, signOut, updateProfile,
+  signInWithPopup, signInWithRedirect, getRedirectResult, sendPasswordResetEmail, sendEmailVerification, signOut, updateProfile,
 } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
 import {
   getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, addDoc, collection, query, where, orderBy, getDocs, serverTimestamp, onSnapshot, limit, writeBatch,
@@ -32,6 +32,14 @@ export function createFirebaseApi(config, appConfig = {}) {
   const base = String(appConfig.apiUrl || "").replace(/\/$/, "");
   const uid = () => auth.currentUser?.uid || null;
   let titleCache = null;
+
+  // First Google sign-in: save the viewer's name (also after coming back from Google's page).
+  async function firstGoogle(user) {
+    if (!user) return;
+    const ref = doc(db, "users", user.uid);
+    if (!(await getDoc(ref)).exists()) { await setDoc(ref, { name: user.displayName || "Viewer", createdAt: serverTimestamp() }); api.track?.("signup"); }
+  }
+  getRedirectResult(auth).then((r) => firstGoogle(r?.user)).catch((e) => console.warn("google redirect", e.code || e.message));
 
   // Wake the free Render service early so the first play isn't held up by its cold start.
   if (base) fetch(base + "/health").catch(() => {});
@@ -64,12 +72,14 @@ export function createFirebaseApi(config, appConfig = {}) {
     }),
     signIn: wrap((email, pass) => signInWithEmailAndPassword(auth, email, pass)),
     google: wrap(async () => {
-      const p = new GoogleAuthProvider();
+      const p = new GoogleAuthProvider(); p.setCustomParameters({ prompt: "select_account" });
+      // The installed iPhone app (home-screen) can't open pop-ups: go to Google and come back instead.
+      const iosApp = /iphone|ipad|ipod/i.test(navigator.userAgent) && (navigator.standalone === true || matchMedia("(display-mode: standalone)").matches);
+      if (iosApp) return signInWithRedirect(auth, p);
       let r;
       try { r = await signInWithPopup(auth, p); }
-      catch (e) { if (e.code === "auth/popup-blocked" || e.code === "auth/operation-not-supported-in-this-environment") return signInWithRedirect(auth, p); throw e; }
-      const ref = doc(db, "users", r.user.uid);
-      if (!(await getDoc(ref)).exists()) { await setDoc(ref, { name: r.user.displayName || "Viewer", createdAt: serverTimestamp() }); api.track("signup"); }
+      catch (e) { if (["auth/popup-blocked", "auth/operation-not-supported-in-this-environment", "auth/web-storage-unsupported"].includes(e.code)) return signInWithRedirect(auth, p); throw e; }
+      await firstGoogle(r.user);
       return r.user;
     }),
     resetPassword: wrap((email) => sendPasswordResetEmail(auth, email)),

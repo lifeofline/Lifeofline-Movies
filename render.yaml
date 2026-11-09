@@ -17,6 +17,13 @@ services:
       - type: rewrite
         source: /.well-known/assetlinks.json
         destination: /assetlinks.json
+      # Sign-in pages served from our own address (movies.lifeofline.com/__/auth), so Google sign-in works on iPhone Safari.
+      - type: rewrite
+        source: /__/auth/*
+        destination: https://lifeofline-movies.firebaseapp.com/__/auth/*
+      - type: rewrite
+        source: /__/firebase/*
+        destination: https://lifeofline-movies.firebaseapp.com/__/firebase/*
 
   # The API: playback links, Premium payments, video uploads, emails.
   # Starts on the free plan (it sleeps after 15 idle minutes and takes up to a minute to wake).

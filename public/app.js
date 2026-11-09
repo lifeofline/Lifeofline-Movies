@@ -12,7 +12,18 @@ import { createHelp } from "./help-widget.js";
 import { initInstall, installCard, markEngaged, STORE_APP } from "./install.js";
 
 const DEMO = String(firebaseConfig.apiKey || "").startsWith("PASTE");
-const api = DEMO ? (await import("./api-demo.js")).createDemoApi() : (await import("./api-firebase.js")).createFirebaseApi(firebaseConfig, appConfig);
+// Sign-in pages served from movies.lifeofline.com itself (Render forwards /__/auth to Firebase), so Google sign-in
+// works on iPhone Safari, which blocks the separate firebaseapp.com address. Only used once those pages really answer here.
+async function authConfig() {
+  if (location.hostname !== "movies.lifeofline.com") return firebaseConfig;
+  try {
+    const r = await Promise.race([fetch("/__/firebase/init.json", { cache: "no-store" }), new Promise((_, no) => setTimeout(() => no(new Error("slow")), 3000))]);
+    const j = r.ok ? await r.json() : null;
+    if (j?.projectId === firebaseConfig.projectId) return { ...firebaseConfig, authDomain: location.host };
+  } catch { /* keep the Firebase address */ }
+  return firebaseConfig;
+}
+const api = DEMO ? (await import("./api-demo.js")).createDemoApi() : (await import("./api-firebase.js")).createFirebaseApi(await authConfig(), appConfig);
 const PRICE = 999; // Premium is paid once a year
 
 /* ---------- chat support: quick answers, then the Lifeofline Helpdesk ---------- */
