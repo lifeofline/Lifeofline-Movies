@@ -17,9 +17,9 @@ const DEMO = String(firebaseConfig.apiKey || "").startsWith("PASTE");
 async function authConfig() {
   if (location.hostname !== "movies.lifeofline.com") return firebaseConfig;
   try {
-    const r = await Promise.race([fetch("/__/firebase/init.json", { cache: "no-store" }), new Promise((_, no) => setTimeout(() => no(new Error("slow")), 3000))]);
-    const j = r.ok ? await r.json() : null;
-    if (j?.projectId === firebaseConfig.projectId) return { ...firebaseConfig, authDomain: location.host };
+    const r = await Promise.race([fetch("/__/auth/iframe", { cache: "no-store" }), new Promise((_, no) => setTimeout(() => no(new Error("slow")), 3000))]);
+    const t = r.ok ? await r.text() : "";
+    if (t.length > 200 && !t.includes("Lifeofline Movies")) return { ...firebaseConfig, authDomain: location.host }; // Firebase's page, not ours
   } catch { /* keep the Firebase address */ }
   return firebaseConfig;
 }
