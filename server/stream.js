@@ -84,6 +84,54 @@ module.exports = function makeStream({ db, env }) {
     return { uploadUrl, uid };
   }
 
+  // Admin page: a teaser (short silent preview that loops on posters and the home banner). Teasers are promotion, so they
+  // don't need signed links, but they still only play on our own site. Served as a plain MP4 so they autoplay without a player.
+  async function teaserUpload({ size, name }) {
+    size = Math.round(Number(size) || 0);
+    if (size <= 0 || size > 300 * 1024 ** 2) throw show("Pick a teaser video under 300 MB (5 to 30 seconds is ideal).");
+    if (!LIVE) return { test: true, uid: "test_" + crypto.randomBytes(6).toString("hex") };
+    const meta = [`name ${b64("Teaser · " + String(name || "teaser").slice(0, 100))}`, `maxdurationseconds ${b64(120)}`, ...(ORIGINS.length ? [`allowedorigins ${b64(ORIGINS.join(","))}`] : [])].join(",");
+    const res = await net(`${api}?direct_user=true`, { method: "POST", headers: { Authorization: `Bearer ${TOKEN}`, "Tus-Resumable": "1.0.0", "Upload-Length": String(size), "Upload-Metadata": meta } });
+    if (res.status !== 201) { const text = await res.text().catch(() => ""); console.error("Cloudflare tus teaser", res.status, text.slice(0, 500)); throw why(res.status, text); }
+    const uploadUrl = res.headers.get("location"), uid = res.headers.get("stream-media-id");
+    if (!uploadUrl || !uid) throw show("Cloudflare accepted the upload but didn't return an upload address. Try again.", 400);
+    return { uploadUrl, uid };
+  }
+  // After the upload: once Cloudflare has processed it, make the MP4 and return its address (call again until ready).
+  async function teaserReady(uid) {
+    if (!LIVE || String(uid).startsWith("test_")) return { ready: true, url: "teasers/01-sarhad.mp4", test: true };
+    if (!/^[a-f0-9]{32}$/.test(String(uid))) throw show("That isn't a Cloudflare video id.");
+    const v = await cf("GET", "/" + uid);
+    if (!v.readyToStream) return { ready: false, stage: "processing", pct: Number(v.status?.pctComplete || 0) };
+    if ((v.duration || 0) > 60) throw show(`This teaser is ${Math.round(v.duration)} seconds long. Teasers loop on posters, so keep them under 60 seconds (5 to 30 is best).`);
+    const d = (await cf("POST", "/" + uid + "/downloads"))?.default || {};
+    if (d.status !== "ready") return { ready: false, stage: "mp4", pct: Number(d.percentComplete || 0) };
+    return { ready: true, url: d.url || `${HOST}/${uid}/downloads/default.mp4`, duration: Math.round(v.duration || 0) };
+  }
+
+  // Admin → Numbers: minutes stored against the plan, minutes watched this month and a cost estimate.
+  // Prices: $5 a month per 1,000 minutes stored (bought in blocks), $1 per 1,000 minutes delivered.
+  async function usage() {
+    if (!LIVE) return { test: true };
+    const s = await cf("GET", "/storage-usage");
+    const now = new Date(), start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)), next = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+    const iso = (d) => d.toISOString().slice(0, 10);
+    let viewed = null, viewedErr = "";
+    try {
+      const q = `query($a: string!, $s: Date, $e: Date) { viewer { accounts(filter: { accountTag: $a }) { streamMinutesViewedAdaptiveGroups(filter: { date_geq: $s, date_lt: $e }, limit: 1) { sum { minutesViewed } } } } }`;
+      const res = await net("https://api.cloudflare.com/client/v4/graphql", { method: "POST", headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" }, body: JSON.stringify({ query: q, variables: { a: ACC, s: iso(start), e: iso(next) } }) });
+      const j = await res.json().catch(() => ({}));
+      if (j.errors?.length) throw new Error(j.errors.map((e) => e.message).join("; "));
+      viewed = Number(j.data?.viewer?.accounts?.[0]?.streamMinutesViewedAdaptiveGroups?.[0]?.sum?.minutesViewed || 0);
+    } catch (e) { viewedErr = /auth|permission|not authorized|access/i.test(e.message) ? "Add the permission Account → Account Analytics → Read to CF_STREAM_TOKEN in Cloudflare to see minutes watched." : "Minutes watched aren't available right now (" + String(e.message).slice(0, 120) + ")."; }
+    const daysIn = Math.round((next - start) / 864e5), dayNow = Math.max(1, (now - start) / 864e5);
+    const stored = Math.round(s.totalStorageMinutes || 0), limit = Math.round(s.totalStorageMinutesLimit || 0);
+    const storageUsd = (Math.ceil(Math.max(limit, stored) / 1000) || 0) * 5;
+    const projected = viewed == null ? null : Math.round((viewed / dayNow) * daysIn);
+    return { stored, limit, videos: s.videoCount || 0, viewed, viewedErr, projected, month: iso(start).slice(0, 7), storageUsd,
+      watchUsd: viewed == null ? null : +(viewed / 1000).toFixed(2), projectedUsd: projected == null ? null : +(storageUsd + projected / 1000).toFixed(2) };
+  }
+
   // Admin page: is the video ready to play yet?
   async function status(uid) {
     if (!LIVE || String(uid).startsWith("test_")) return { ready: true, duration: 0, state: "ready", pct: 100, test: true };
@@ -107,5 +155,5 @@ module.exports = function makeStream({ db, env }) {
     return r.uid;
   }
 
-  return { LIVE, playUrl, uploadUrl, status, sign, protect, previewClip, SAMPLE_HLS };
+  return { LIVE, playUrl, uploadUrl, status, sign, protect, previewClip, teaserUpload, teaserReady, usage, SAMPLE_HLS };
 };

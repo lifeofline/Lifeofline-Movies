@@ -491,3 +491,9 @@ html { overflow-x: clip; }
 .ph-cc { display: grid; place-items: center; padding: 0 12px; background: var(--ink-3); border: 1px solid var(--line); border-right: 0; border-radius: 10px 0 0 10px; color: var(--fg); font-weight: 600; }
 .ph-row input { border-radius: 0 10px 10px 0 !important; }
 .grecaptcha-badge { visibility: hidden; }
+
+/* Admin: teaser preview and video storage meter */
+.tzprev { width: 120px; aspect-ratio: 4 / 5; object-fit: cover; border-radius: 8px; display: block; margin: 6px 0; background: #000; }
+.vmeter { height: 10px; border-radius: 5px; background: var(--ink-3); overflow: hidden; margin: 6px 0 10px; }
+.vmeter i { display: block; height: 100%; background: var(--gold); border-radius: 5px; }
+.vmeter.warn i { background: var(--rose); }

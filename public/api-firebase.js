@@ -213,8 +213,9 @@ export function createFirebaseApi(config, appConfig = {}) {
       await updateDoc(doc(db, "titles", titleId), { episodeCount: n }); return true;
     }),
     // Sends the file straight from the browser to Cloudflare (resumable, so big films survive a dropped connection).
-    async uploadVideo(file, onProgress) {
-      const r = await call("/admin", { action: "upload", size: file.size, name: file.name });
+    // kind "teaser": a short public preview loop (no signed links), see server/stream.js teaserUpload.
+    async uploadVideo(file, onProgress, kind = "") {
+      const r = await call("/admin", { action: kind === "teaser" ? "teaserUpload" : "upload", size: file.size, name: file.name });
       if (r.test) { onProgress(100); return r.uid; }
       await loadScript("https://cdn.jsdelivr.net/npm/tus-js-client@4.1.0/dist/tus.min.js");
       await new Promise((res, rej) => {
@@ -228,6 +229,8 @@ export function createFirebaseApi(config, appConfig = {}) {
       return r.uid;
     },
     videoStatus: (uidV) => call("/admin", { action: "video", uid: uidV }),
+    teaserReady: (uidV) => call("/admin", { action: "teaserReady", uid: uidV }),
+    storage: () => call("/admin", { action: "storage" }),
     async uploadImage(file, { wide = false } = {}) {
       const fd = new FormData();
       fd.append("file", file); fd.append("upload_preset", appConfig.cloudinaryUploadPreset); fd.append("folder", appConfig.cloudinaryFolder || "lifeofline-movies");

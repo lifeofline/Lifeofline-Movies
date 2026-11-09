@@ -108,9 +108,29 @@ export async function mountAdmin(root, { api, reload }) {
   function render() {
     root.innerHTML = `<div class="ptitle"><div><span class="eyebrow">Admin</span><h1>Lifeofline Movies</h1></div><span>${api.mode === "demo" ? "Demo mode: changes stay in this browser" : ""}</span></div>
       <div class="chips">${tabs.map(([k, l]) => `<button class="chip ${A.tab === k ? "on" : ""}" data-atab="${k}" data-nav>${l}</button>`).join("")}</div>
-      <div id="abody">${A.tab === "titles" ? (A.editing ? editor() : titleList()) : A.tab === "ads" ? adsView() : A.tab === "support" ? supportView() : A.tab === "ai" ? aiView() : A.tab === "gifts" ? giftView() : A.tab === "team" ? teamView() : `<div class="card" id="stats"><span class="spin"></span></div>`}</div>`;
+      <div id="abody">${A.tab === "titles" ? (A.editing ? editor() : titleList()) : A.tab === "ads" ? adsView() : A.tab === "support" ? supportView() : A.tab === "ai" ? aiView() : A.tab === "gifts" ? giftView() : A.tab === "team" ? teamView() : `<div class="card" id="vstore"><span class="spin"></span></div><div class="card" id="stats"><span class="spin"></span></div>`}</div>`;
     if (A.tab === "team") api.listAdmins().then((x) => { A.team = x; const el = $("#teamlist"); if (el) el.innerHTML = teamRows(); }).catch((e) => { const el = $("#teamlist"); if (el) el.textContent = e.message; });
-    if (A.tab === "stats") api.stats().then((x) => { const el = $("#stats"); if (el) el.innerHTML = statsHtml(x); }).catch((e) => { const el = $("#stats"); if (el) el.textContent = e.message; });
+    if (A.tab === "stats") {
+      api.stats().then((x) => { const el = $("#stats"); if (el) el.innerHTML = statsHtml(x); }).catch((e) => { const el = $("#stats"); if (el) el.textContent = e.message; });
+      api.storage?.().then((x) => { const el = $("#vstore"); if (el) el.innerHTML = storageHtml(x); }).catch((e) => { const el = $("#vstore"); if (el) el.innerHTML = `<p class="small">${esc(e.message)}</p>`; });
+    }
+  }
+
+  // Video storage (Cloudflare Stream): minutes stored against the plan, minutes watched this month, monthly estimate.
+  function storageHtml(x) {
+    if (x.test) return `<h3>Video storage</h3><p class="small">Cloudflare isn't connected yet (test mode).</p>`;
+    const n = (v) => Number(v || 0).toLocaleString("en-IN"), usd = (v) => "$" + Number(v || 0).toFixed(2);
+    const pct = x.limit ? Math.min(100, Math.round((x.stored / x.limit) * 100)) : 0, warn = pct >= 80;
+    return `<h3>Video storage <span class="small">Cloudflare Stream · ${esc(x.month || "")}${x.demo ? " · sample numbers" : ""}</span></h3>
+      <div class="vmeter ${warn ? "warn" : ""}" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}" aria-label="Storage used"><i style="width:${pct}%"></i></div>
+      <div class="kv"><span>Minutes stored</span><span>${n(x.stored)} of ${n(x.limit)} (${pct}%) · ${n(x.videos)} videos</span></div>
+      ${warn ? `<p class="err" style="margin:4px 0">Storage is ${pct}% full. Buy the next 1,000-minute block in Cloudflare (Stream → Plans) before uploading more.</p>` : ""}
+      <div class="kv"><span>Minutes watched this month</span><span>${x.viewed == null ? "–" : n(x.viewed)}${x.projected != null ? ` · on track for ${n(x.projected)}` : ""}</span></div>
+      ${x.viewedErr ? `<p class="small">${esc(x.viewedErr)}</p>` : ""}
+      <div class="kv"><span>Storage cost</span><span>${usd(x.storageUsd)} a month</span></div>
+      <div class="kv"><span>Watching cost so far</span><span>${x.watchUsd == null ? "–" : usd(x.watchUsd)}</span></div>
+      <div class="kv"><b>Estimated bill this month</b><b>${x.projectedUsd == null ? usd(x.storageUsd) + " + watching" : usd(x.projectedUsd)}</b></div>
+      <p class="small">Cloudflare charges $5 a month per 1,000 minutes stored and $1 per 1,000 minutes watched. Watching numbers are sampled, so the invoice may differ slightly. Set a spending alert in Cloudflare → Notifications.</p>`;
   }
 
   // Viewing numbers: last 7 days, top titles and the latest playback problems.
@@ -185,6 +205,10 @@ export async function mountAdmin(root, { api, reload }) {
           <label class="check"><input type="checkbox" id="f_concept" ${t.concept ? "checked" : ""} data-nav> Concept showcase (fictional film, not scheduled; poster teaser only)</label>
           <p class="small">Test uploads: untick “Published” so only admins see them.</p>
           <div class="upl"><b>Trailer</b> <span class="small">${t.trailerUid ? "Uploaded" : "None"} · always free</span><input type="file" id="f_trailer" accept="video/*" data-nav><div class="bar" id="trbar" hidden><i></i></div></div>
+          <div class="upl"><b>Teaser</b> <span class="small" id="tzstate">${t.teaser ? (t.teaserUid ? "On Cloudflare ✓" : "Built into the site") : "None"} · silent loop on the poster and home banner, 5–30 seconds</span>
+            ${t.teaser ? `<video class="tzprev" src="${esc(t.teaser)}" muted loop autoplay playsinline></video>` : ""}
+            <input type="file" id="f_teaser" accept="video/*" data-nav><div class="bar" id="tzbar" hidden><i></i></div>
+            ${t.teaser ? `<button type="button" class="link" data-tzclear>Remove teaser</button>` : ""}</div>
         </div>
       </div>
       <p class="err" id="terr" hidden></p>
@@ -264,12 +288,13 @@ export async function mountAdmin(root, { api, reload }) {
       year: v("year"), premium: $("#f_premium").checked, original: $("#f_original").checked, published: $("#f_published").checked,
       comingSoon: $("#f_soon").checked, concept: $("#f_concept").checked,
       synopsis: v("synopsis"), director: v("director"), releaseDate: v("release"), audio: v("audio"), subtitles: v("subs"), banner: t.banner || "",
-      freeEps: num(v("freeEps")), previewSec: Math.min(300, num(v("previewSec")) || 0), order: num(v("order")) ?? 99, poster: t.poster || "", trailerUid: t.trailerUid || "", hue: t.hue || hues(v("title")),
+      freeEps: num(v("freeEps")), previewSec: Math.min(300, num(v("previewSec")) || 0), order: num(v("order")) ?? 99, poster: t.poster || "", trailerUid: t.trailerUid || "", teaser: t.teaser || "", teaserUid: t.teaserUid || "", hue: t.hue || hues(v("title")),
     };
   }
 
   root.addEventListener("change", (e) => { if (["ai_a", "ai_r", "ai_s"].includes(e.target.id)) { aiRead(); render(); } });
   root.addEventListener("click", async (e) => {
+    if (e.target.closest("[data-tzclear]") && A.editing) { A.editing.teaser = ""; A.editing.teaserUid = ""; render(); toast("Teaser removed. Save to keep the change."); return; }
     const b = e.target.closest("button"); if (!b) return;
     if (b.dataset.ai) return aiClick(b);
     if (b.dataset.sopen != null) { SUP.sel = b.dataset.sopen; SUP.msgs = null; SUP.stop?.(); SUP.stop = api.watchSupportMsgs(SUP.sel, (l) => { SUP.msgs = l; if (A.tab === "support") { $("#abody").innerHTML = supportView(); const m = $("#supm"); if (m) m.scrollTop = m.scrollHeight; } }); api.supportMarkRead(SUP.sel); return render(); }
@@ -368,6 +393,20 @@ export async function mountAdmin(root, { api, reload }) {
       A.busy = true;
       try { const set = progressBar("trbar"); A.editing.trailerUid = await api.uploadVideo(e.target.files[0], set); toast("Trailer uploaded. Save to keep it."); }
       catch (er) { toast(er.message, 6000); } finally { A.busy = false; }
+    }
+    // Teaser: upload to Cloudflare, wait while it's processed and its MP4 is made, then keep the MP4 address.
+    if (e.target.id === "f_teaser" && e.target.files[0]) {
+      A.busy = true; const st = $("#tzstate"); const say = (m) => { if (st) st.textContent = m; };
+      try {
+        const set = progressBar("tzbar"); say("Uploading…");
+        const uidV = await api.uploadVideo(e.target.files[0], set, "teaser");
+        say("Cloudflare is processing it…");
+        let r = null;
+        for (let i = 0; i < 120; i++) { r = await api.teaserReady(uidV); if (r.ready) break; say(r.stage === "mp4" ? `Making the MP4… ${Math.round(r.pct || 0)}%` : `Processing… ${Math.round(r.pct || 0)}%`); await new Promise((ok) => setTimeout(ok, 5000)); }
+        if (!r?.ready) throw new Error("Cloudflare is still working on it. Open this title again in a few minutes and upload once more if it doesn't show.");
+        A.editing.teaser = r.url; A.editing.teaserUid = uidV;
+        say("Teaser ready on Cloudflare ✓ · Save to keep it"); toast("Teaser ready. Save to keep it.");
+      } catch (er) { say("Upload failed"); toast(er.message, 6000); } finally { A.busy = false; }
     }
     if (e.target.id === "f_kind") { const f = $("#f_format"); if (f) f.value = e.target.value === "short" ? "v" : "h"; }
   });

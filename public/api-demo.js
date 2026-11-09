@@ -130,6 +130,8 @@ export function createDemoApi() {
     async deleteEpisode(titleId, id) { D.episodes[titleId] = (D.episodes[titleId] || []).filter((e) => e.id !== id); D.titles[titleId].episodeCount = D.episodes[titleId].length; save(); return wait(true); },
     async uploadVideo(file, onProgress) { for (let p = 0; p <= 100; p += 20) { onProgress(p); await wait(0, 150); } return "test_" + Date.now().toString(36); },
     async videoStatus() { return wait({ ready: true, duration: 0, state: "ready", pct: 100, test: true }); },
+    async teaserReady() { return wait({ ready: true, url: "teasers/01-sarhad.mp4", test: true }); },
+    async storage() { return wait({ stored: 940, limit: 1000, videos: 23, viewed: 18450, viewedErr: "", projected: 61500, month: new Date().toISOString().slice(0, 7), storageUsd: 5, watchUsd: 18.45, projectedUsd: 66.5, demo: true }); },
     async uploadImage(file) { return new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(file); }); },
     async allAds() { return wait([...D.ads]); },
     async saveAd(a) { const id = a.id || "ad" + Date.now().toString(36); const i = D.ads.findIndex((x) => x.id === id); if (i >= 0) D.ads[i] = { ...D.ads[i], ...a, id }; else D.ads.push({ ...a, id }); save(); return wait(id); },

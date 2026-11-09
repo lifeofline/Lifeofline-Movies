@@ -8,7 +8,7 @@
 //   POST /play     {titleId, epId?, trailer?}   → {hls, ads, …}  (sign-in optional: free titles play for guests)
 //   POST /sub      {action: status|start|verify|cancel}            (signed in)
 //   POST /me       {action: setDob|claimAdmin}                      (signed in)
-//   POST /admin    {action: upload|video|grant|stats}               (admins)
+//   POST /admin    {action: upload|video|teaserUpload|teaserReady|storage|grant|stats}   (admins)
 //   POST /pay/webhook                  Razorpay webhook
 const http = require("http");
 const { initializeApp, cert } = require("firebase-admin/app");
@@ -195,6 +195,9 @@ async function admin(uid, body) {
   if (action === "upload") return stream.uploadUrl(body);
   if (ai.actions.includes(action)) return ai.handle(uid, body);
   if (action === "video") return stream.status(String(body.uid || ""));
+  if (action === "teaserUpload") return stream.teaserUpload(body);
+  if (action === "teaserReady") return stream.teaserReady(String(body.uid || ""));
+  if (action === "storage") return stream.usage();
   if (action === "grant") { // give someone free Premium (cast, crew, testers)
     const days = Math.min(366, Math.max(1, Math.round(Number(body.days) || 30)));
     let u; try { u = await auth.getUserByEmail(String(body.email || "").trim()); } catch { throw show("No account uses that email. Ask them to sign up first.", 404); }
