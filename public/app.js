@@ -408,6 +408,7 @@ async function vTitle(id) {
       ${t.synopsis ? `<p class="desc">${esc(t.synopsis)}</p>${t.desc && t.desc !== t.synopsis ? `<p class="tagline">“${esc(t.desc)}”</p>` : ""}` : `<p class="desc">${esc(t.desc || "")}</p>`}
       <div class="row">
         ${soon ? "" : first && playLabel ? `<button class="btn gold" data-play="${esc(t.id)}" data-ep="${esc(first.id)}" data-nav>▶ ${playLabel}</button>` : !first ? "" : `<a class="btn gold" href="#plans" data-nav>Subscribe to watch · ₹${PRICE}</a>`}
+        ${!soon && first && playLabel && t.format !== "v" && t.kind !== "movie" ? `<button class="btn ghost" data-play="${esc(t.id)}" data-ep="${esc(first.id)}" data-listen data-nav title="Plays the sound only, so you can lock your phone">🎧 Listen</button>` : ""}
         ${t.trailerUid || t.teaser ? `<button class="btn ${soon ? "gold" : "ghost"}" data-trailer="${esc(t.id)}" data-nav>▶ ${t.trailerUid ? "Trailer" : "Poster teaser"}</button>` : ""}
         <button class="btn ghost" data-listtog="${esc(t.id)}" data-nav>${S.list.includes(t.id) ? "✓ In My List" : "＋ My List"}</button>
         <button class="btn ghost" data-share="${esc(t.id)}" data-nav>Share</button>
@@ -600,7 +601,7 @@ document.addEventListener("mouseout", (e) => { const t = e.target.closest(".tile
 document.addEventListener("focusin", (e) => { if (!S.tv) return; const t = e.target.closest?.(".tile"); $$(".tile.peek").forEach((x) => x !== t && unpeek(x)); if (t) peek(t); });
 
 /* ---------- actions ---------- */
-async function play(titleId, epId, trailer = false) {
+async function play(titleId, epId, trailer = false, listen = false) {
   const t = withStarter(byId(titleId) || (await api.title(titleId)));
   if (!t) return toast("This title isn't available.");
   markEngaged();
@@ -611,7 +612,7 @@ async function play(titleId, epId, trailer = false) {
   if (!epId && !trailer) epId = p?.epId || eps[0]?.id;
   const startAt = !trailer && p && p.epId === epId && p.pos < (p.dur || 0) - 30 ? p.pos : 0;
   openPlayer({
-    api, title: t, episodes: eps, epId, trailer, startAt, ads: S.ads, direct: !t.trailerUid && t.teaser ? t.teaser : "",
+    api, title: t, episodes: eps, epId, trailer, startAt, listen, ads: S.ads, direct: !t.trailerUid && t.teaser ? t.teaser : "",
     onNeedPlan: () => { location.hash = "#plans"; },
     onNeedSignIn: () => joinSheet("Create a free account to watch this", "This title is rated A (18+), so we need an account with your date of birth first."),
     onNeedAge: () => { location.hash = "#account"; },
@@ -733,7 +734,7 @@ const pinHash = async (pin) => { const b = await crypto.subtle.digest("SHA-256",
 document.addEventListener("click", async (e) => {
   const el = e.target.closest("[data-play],[data-trailer],[data-lang],[data-avail],[data-hero],[data-listtog],[data-share],[data-subscribe],[data-signout],[data-cancel],[data-dob],[data-kidson],[data-kidsoff],[data-tvtog],[data-google],[data-facebook],[data-phone],[data-verify],[data-claim],[data-demo-reset]");
   if (!el) return;
-  if (el.dataset.play) return play(el.dataset.play, el.dataset.ep);
+  if (el.dataset.play) return play(el.dataset.play, el.dataset.ep, false, el.hasAttribute("data-listen"));
   if (el.dataset.trailer) return play(el.dataset.trailer, null, true);
   if (el.dataset.lang) { S.lang = el.dataset.lang; store.set("lang", S.lang); S.keepScroll = true; return route(); }
   if (el.dataset.avail) { S.avail = el.dataset.avail; S.keepScroll = true; return route(); }

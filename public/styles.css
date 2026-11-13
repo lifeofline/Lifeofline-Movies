@@ -497,3 +497,23 @@ html { overflow-x: clip; }
 .vmeter { height: 10px; border-radius: 5px; background: var(--ink-3); overflow: hidden; margin: 6px 0 10px; }
 .vmeter i { display: block; height: 100%; background: var(--gold); border-radius: 5px; }
 .vmeter.warn i { background: var(--rose); }
+/* Autoplay switch, Listen / Watch button and listening mode */
+.pmode, .ptog { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.ptog[hidden], .pqual[hidden] { display: none; }
+.ptog .sw { position: relative; width: 30px; height: 18px; border-radius: 9px; background: rgba(255,255,255,.3); transition: background .15s; }
+.ptog .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform .15s; }
+.ptog[aria-pressed="true"] .sw { background: var(--gold); }
+.ptog[aria-pressed="true"] .sw::after { transform: translateX(12px); }
+.pov.listen .pstage { background: radial-gradient(120% 80% at 50% 20%, #3a2a4f 0%, #140f1c 70%); }
+.plisten { position: absolute; inset: 0; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 18px; padding: calc(84px + env(safe-area-inset-top, 0px)) max(20px, env(safe-area-inset-left, 0px)) 0 max(20px, env(safe-area-inset-right, 0px)); text-align: center; }
+.plisten .lart { width: min(62vw, 38dvh, 320px); aspect-ratio: 1; border-radius: 18px; background: #2a2236 center / cover no-repeat; box-shadow: 0 18px 50px rgba(0,0,0,.55); display: grid; place-items: center; padding: 16px; }
+.plisten .lart span { font-family: var(--f-display); font-size: 22px; color: #fff; }
+.plisten .lnow { display: grid; gap: 4px; max-width: 520px; }
+.plisten .lnow b { font-family: var(--f-display); font-size: 22px; color: #fff; }
+.plisten .lep { color: #f1e6ff; font-size: 15px; }
+.plisten .lhint { color: rgba(255,255,255,.62); font-size: 13px; margin-top: 4px; }
+.pov.listen .pmid { top: auto; bottom: calc(120px + env(safe-area-inset-bottom, 0px)); transform: none; }
+.pov.listen .ptop, .pov.listen .pbot { background: none; }
+.pov.listen audio { display: none; }
+@media (max-height: 640px) { .plisten .lhint { display: none; } .plisten { gap: 10px; padding-top: calc(70px + env(safe-area-inset-top, 0px)); } }
+@media (max-width: 520px) { .pmode span, .ptog { font-size: 13px; } .pmode { padding: 8px 12px; } }

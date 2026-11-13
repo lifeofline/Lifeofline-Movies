@@ -15,6 +15,11 @@ const ICON_FWD = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 const ICON_NEXT = `<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" aria-hidden="true"><path d="M6 5v14l9-7zM16 5h2.5v14H16z"/></svg>`;
 const ICON_FS = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>`;
 const ICON_FS_EXIT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>`;
+const ICON_HEAD = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="5" height="7" rx="2"/><rect x="16" y="14" width="5" height="7" rx="2"/></svg>`;
+const ICON_TV = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8"/></svg>`;
+// Autoplay the next episode (on unless the viewer turns it off) and the listening-mode sleep timer.
+const pref = { get autoplay() { try { return localStorage.getItem("lm-autoplay") !== "0"; } catch { return true; } }, set autoplay(on) { try { localStorage.setItem("lm-autoplay", on ? "1" : "0"); } catch { /* ignore */ } } };
+const SLEEP = [["0", "Off"], ["ep", "End of episode"], ["15", "15 min"], ["30", "30 min"], ["60", "1 hour"]];
 const track = (P, type, extra = {}) => { try { P.api.track?.(type, { titleId: P.title.id, epId: P.ep?.id || "", ...extra }); } catch { /* best effort */ } };
 
 // A clear message with Retry and Report a problem, in place of a spinner or a black screen.
@@ -36,15 +41,25 @@ export async function openPlayer(opts) {
   const had = !!current;
   if (had) teardown(false); // reuse the same Back-button entry
   const { title } = opts;
-  const vertical = title.format === "v" && !opts.trailer;
+  const listen = !!opts.listen && !opts.trailer;
+  const vertical = title.format === "v" && !opts.trailer && !listen;
+  const art = title.poster ? `background-image:url('${String(title.poster).replace(/'/g, "%27")}')` : "";
   const ov = document.createElement("div");
   ov.className = "pov"; ov.setAttribute("role", "dialog"); ov.setAttribute("aria-label", "Player: " + title.title);
+  ov.className = "pov" + (listen ? " listen" : "");
+  // Listening mode plays the sound through an <audio> element: phones keep it going with the screen off or another app open,
+  // and the lock screen / headphones control it. The picture is replaced by the poster and what's playing.
   ov.innerHTML = `<div class="pstage ${vertical ? "v" : ""}" id="pstage">
-      <video id="pv" playsinline webkit-playsinline preload="auto" x-webkit-airplay="deny" controlslist="nodownload noremoteplayback noplaybackrate" disablepictureinpicture disableremoteplayback></video>
+      ${listen ? `<audio id="pv" preload="auto" controlslist="nodownload"></audio>
+      <div class="plisten"><div class="lart" style="${art}">${title.poster ? "" : `<span>${esc(title.title)}</span>`}</div>
+        <div class="lnow"><span class="eyebrow">Listening</span><b id="lname">${esc(title.title)}</b><span id="lep" class="lep"></span>
+        <span class="lhint">You can lock your phone or open another app. It keeps playing${opts.episodes?.length > 1 ? " and moves on to the next episode by itself" : ""}.</span></div></div>`
+      : `<video id="pv" playsinline webkit-playsinline preload="auto" x-webkit-airplay="deny" controlslist="nodownload noremoteplayback noplaybackrate" disablepictureinpicture disableremoteplayback></video>`}
       <div class="ppv" id="ppv" hidden></div>
       <div class="pseekfx l" id="pfxl" aria-hidden="true">${ICON_BACK}<span>10 sec</span></div><div class="pseekfx r" id="pfxr" aria-hidden="true">${ICON_FWD}<span>10 sec</span></div>
       <div class="plyr" id="plyr"></div>
       <div class="ptop"><button class="pic" data-pclose aria-label="Close">${ICON_X}</button><div class="pttl"><b id="pname">${esc(title.title)}</b><span class="rating" id="prate">${esc(title.rating || "U")}</span></div>
+        ${opts.trailer ? "" : `<button class="pbtn pmode" data-pmode aria-label="${listen ? "Watch the video" : "Listen with the screen off"}">${listen ? ICON_TV + "<span>Watch</span>" : ICON_HEAD + "<span>Listen</span>"}</button>`}
         <button class="pbtn pnext" data-pnext id="pnext" hidden aria-label="Next episode">Next<span class="nx-long"> episode</span> ${ICON_NEXT}</button></div>
       <div class="pmid" id="pmid">
         <button class="pic big" data-seek="-10" aria-label="Back 10 seconds">${ICON_BACK}</button>
@@ -58,24 +73,26 @@ export async function openPlayer(opts) {
           <span class="ptime" id="pleft">-0:00</span>
         </div>
         <div class="pctl">
+          <button class="pbtn ptog" data-pauto id="pauto" aria-pressed="${pref.autoplay}" hidden><span class="sw" aria-hidden="true"></span>Autoplay</button>
+          ${listen ? `<label class="pqual"><span class="sr">Sleep timer</span><select id="psleep" aria-label="Sleep timer">${SLEEP.map(([v, l]) => `<option value="${v}">${v === "0" ? "Sleep timer" : "Sleep: " + l}</option>`).join("")}</select></label>` : ""}
           <span class="pspace"></span>
-          <label class="pqual"><span class="sr">Quality</span><select id="pq" aria-label="Quality"><option value="-1">Auto</option></select></label>
-          <button class="pic" data-pfs aria-label="Full screen" id="pfsb">${ICON_FS}</button>
+          <label class="pqual" ${listen ? "hidden" : ""}><span class="sr">Quality</span><select id="pq" aria-label="Quality"><option value="-1">Auto</option></select></label>
+          ${listen ? "" : `<button class="pic" data-pfs aria-label="Full screen" id="pfsb">${ICON_FS}</button>`}
         </div>
       </div>
     </div>`;
   document.body.append(ov);
   document.body.classList.add("playing");
-  const P = current = { ...opts, ov, vertical, video: $("#pv", ov), hls: null, ep: null, res: null, midDone: false, phase: "load", saveT: 0, idleT: 0, destroyed: false };
+  const P = current = { ...opts, ov, listen, vertical, video: $("#pv", ov), sleepAt: 0, sleepEp: false, hls: null, ep: null, res: null, midDone: false, phase: "load", saveT: 0, idleT: 0, destroyed: false };
   if (!had) history.pushState({ player: 1 }, "");
   wire(P);
-  await start(P, opts.epId, opts.trailer, opts.startAt);
+  await start(P, opts.epId, opts.trailer, opts.startAt, opts.skipIntro);
 }
 
 function layer(P, html) { const l = $("#plyr", P.ov); l.innerHTML = html; l.hidden = !html; P.ov.classList.toggle("has-layer", !!html); }
 
-async function start(P, epId, trailer, startAt) {
-  P.phase = "load"; P.midDone = false; P.completed = false; clearTimeout(P.startT);
+async function start(P, epId, trailer, startAt, skipIntro = false) {
+  P.phase = "load"; P.midDone = skipIntro ? !!P.midDone : false; P.completed = false; clearTimeout(P.startT);
   layer(P, `<div class="pcard"><span class="spin" aria-label="Loading"></span></div>`);
   let r;
   // A teaser stored with the site (a plain MP4) plays straight away; everything else asks the server for a signed link.
@@ -97,11 +114,13 @@ async function start(P, epId, trailer, startAt) {
   P.res = r; P.trailer = !!trailer;
   P.ep = trailer ? null : (P.episodes || []).find((x) => x.id === r.epId) || { id: r.epId, n: r.n, name: r.name };
   $("#pname", P.ov).textContent = trailer ? `${P.title.title} · ${P.direct ? "Animated poster teaser" : "Trailer"}` : P.title.kind === "movie" ? P.title.title : `${P.title.title} · Ep ${r.n}${P.title.demo ? " · Demo story card" : ""}`;
-  const nx = nextEp(P); $("#pnext", P.ov).hidden = !nx;
+  const nx = nextEp(P); $("#pnext", P.ov).hidden = !nx; $("#pauto", P.ov).hidden = !(P.episodes?.length > 1) || trailer;
+  if (P.listen) { const le = $("#lep", P.ov); if (le) le.textContent = P.title.kind === "movie" ? "" : `Episode ${r.n}${r.name && !/^Episode \d+$/.test(r.name) ? " · " + r.name : ""}`; }
   if ("mediaSession" in navigator && window.MediaMetadata) {
-    try { navigator.mediaSession.metadata = new MediaMetadata({ title: $("#pname", P.ov).textContent, artist: "Lifeofline Movies", artwork: P.title.poster ? [{ src: P.title.poster, sizes: "512x512" }] : [{ src: "icon-512.png", sizes: "512x512", type: "image/png" }] }); } catch { /* ignore */ }
+    const epLine = !trailer && P.title.kind !== "movie" ? `Ep ${r.n}${r.name && !/^Episode \d+$/.test(r.name) ? ": " + r.name : ""}` : "";
+    try { navigator.mediaSession.metadata = new MediaMetadata({ title: epLine || P.title.title, artist: epLine ? P.title.title : "Lifeofline Movies", album: "Lifeofline Movies", artwork: P.title.poster ? [{ src: P.title.poster, sizes: "512x512" }] : [{ src: "icon-512.png", sizes: "512x512", type: "image/png" }] }); } catch { /* ignore */ }
   }
-  if (r.poster) P.video.poster = r.poster;
+  if (r.poster && !P.listen) P.video.poster = r.poster;
   // Free-preview badge.
   const pv = $("#ppv", P.ov); pv.hidden = !r.preview; pv.textContent = r.preview ? `Free preview · ${r.preview} seconds` : "";
 
@@ -109,20 +128,22 @@ async function start(P, epId, trailer, startAt) {
   await attach(P, r.hls).catch((e) => errCard(P, "This video didn't load.", e.message, "attach"));
   if (P.destroyed || P.phase === "error") return;
 
-  // 1. Age rating and content descriptor, shown before every title (IT Rules 2021).
-  if (!trailer) {
+  // 1. Age rating and content descriptor, shown before every title (IT Rules 2021). Not repeated when switching
+  // between watching and listening in the middle of an episode.
+  if (!trailer && !skipIntro) {
     P.phase = "rating";
     layer(P, `<div class="prating"><span class="eyebrow">Rated</span><span class="big">${esc(r.rating)}</span><span>${esc(P.title.descriptor || P.title.genre || "")}</span><small>${esc(P.title.lang || "")} · Viewer discretion advised as per the age rating</small></div>`);
     await sleep(RATING_MS); if (P.destroyed) return;
   }
   // 2. Ad break for the free plan.
-  if (r.ads && !trailer) { await adBreak(P, "Ad break"); if (P.destroyed) return; }
+  if (r.ads && !trailer && !skipIntro) { await adBreak(P, "Ad break"); if (P.destroyed) return; }
   // 3. The video.
   layer(P, "");
   P.phase = "play";
-  const resume = startAt && startAt > 10 ? startAt : 0;
-  if (resume) P.video.addEventListener("loadedmetadata", () => { if (resume < (P.video.duration || 0) - 30) P.video.currentTime = resume; }, { once: true });
-  if (resume && P.video.readyState >= 1 && resume < P.video.duration - 30) P.video.currentTime = resume;
+  // Resume where they stopped (switching between watching and listening resumes at the exact second).
+  const resume = startAt && (skipIntro ? startAt > 0 : startAt > 10) ? startAt : 0, room = skipIntro ? 1 : 30;
+  if (resume) P.video.addEventListener("loadedmetadata", () => { if (resume < (P.video.duration || 0) - room) P.video.currentTime = resume; }, { once: true });
+  if (resume && P.video.readyState >= 1 && resume < P.video.duration - room) P.video.currentTime = resume;
   playSafe(P);
   // Watchdog: if no picture arrives, say so instead of a black screen.
   clearTimeout(P.startT);
@@ -210,10 +231,10 @@ function wire(P) {
   const fill = $("#pfill", ov), buf = $("#pbuf", ov), time = $("#ptime", ov), left = $("#pleft", ov), knob = $("#pknob", ov), ppb = $("#ppb", ov), bar = $("#pbar", ov), cue = $("#pcue", ov);
   ppb.innerHTML = ICON_PLAY;
   // Controls appear on a tap and fade after a few seconds of playing (like Netflix / ZEE5); they stay while paused.
-  const hide = () => { if (!v.paused && !P.seeking) ov.classList.add("idle"); };
+  const hide = () => { if (!v.paused && !P.seeking && !P.listen) ov.classList.add("idle"); };
   const wake = () => { ov.classList.remove("idle"); clearTimeout(P.idleT); P.idleT = setTimeout(hide, 3500); };
   P.wake = wake;
-  v.addEventListener("play", () => { ppb.innerHTML = ICON_PAUSE; ppb.setAttribute("aria-label", "Pause"); wake(); });
+  v.addEventListener("play", () => { wakeLock(P, !P.listen); if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "playing"; ppb.innerHTML = ICON_PAUSE; ppb.setAttribute("aria-label", "Pause"); wake(); });
   v.addEventListener("playing", () => {
     ov.classList.remove("buffering");
     if (!P.started && P.phase === "play") { P.started = true; clearTimeout(P.startT); track(P, P.trailer ? "teaser" : "start"); }
@@ -225,14 +246,15 @@ function wire(P) {
     errCard(P, c === 4 ? "This video format isn't supported here." : c === 3 ? "This video couldn't be decoded." : "This video stopped loading.",
       c === 4 ? "Try the latest Chrome, Safari or Edge, or another device. Please report it so we can check the file." : "Press Retry. If it keeps happening, report it and we'll check the video.", "media-" + (c || "?"));
   });
-  v.addEventListener("pause", () => { ppb.innerHTML = ICON_PLAY; ppb.setAttribute("aria-label", "Play"); ov.classList.remove("idle"); clearTimeout(P.idleT); save(P); });
+  v.addEventListener("pause", () => { wakeLock(P, false); if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused"; ppb.innerHTML = ICON_PLAY; ppb.setAttribute("aria-label", "Play"); ov.classList.remove("idle"); clearTimeout(P.idleT); save(P); });
   v.addEventListener("timeupdate", () => {
     const d = v.duration || 0;
     if (!P.seeking) { const pct = d ? (v.currentTime / d) * 100 : 0; fill.style.width = pct + "%"; knob.style.left = pct + "%"; }
     time.textContent = clock(v.currentTime); left.textContent = d ? "-" + clock(Math.max(0, d - v.currentTime)) : "";
     if (P.res?.ads && !P.trailer && d > MIDROLL_MIN_SEC) { cue.hidden = P.midDone; cue.style.left = "50%"; }
     if (P.res?.ads && !P.trailer && !P.midDone && d > MIDROLL_MIN_SEC && v.currentTime > d / 2 && P.phase === "play") { P.midDone = true; adBreak(P, "Mid-roll"); }
-    if (Date.now() - P.saveT > 10e3) { P.saveT = Date.now(); save(P); }
+    if (Date.now() - P.saveT > 10e3) { P.saveT = Date.now(); save(P); posState(P); }
+    if (P.sleepAt && Date.now() >= P.sleepAt) { P.sleepAt = 0; v.pause(); const sl = $("#psleep", ov); if (sl) sl.value = "0"; toast("Sleep timer: paused", 4000); }
     if (!P.trailer && !P.completed && d > 60 && v.currentTime / d > 0.9) { P.completed = true; track(P, "complete"); }
   });
   v.addEventListener("progress", () => { try { const d = v.duration; if (d && v.buffered.length) buf.style.width = (v.buffered.end(v.buffered.length - 1) / d) * 100 + "%"; } catch { /* ignore */ } });
@@ -241,11 +263,23 @@ function wire(P) {
     save(P);
     if (!P.trailer && !P.completed) { P.completed = true; track(P, "complete"); }
     const nx = nextEp(P);
-    if (!nx) return layer(P, `<div class="pcard"><span class="eyebrow">Finished</span><h3>Thanks for watching</h3><button class="btn ghost" data-pclose>Close</button></div>`);
-    let n = 5;
-    layer(P, `<div class="pcard"><span class="eyebrow">Up next</span><h3>Episode ${nx.n}${nx.name && !/^Episode \d+$/.test(nx.name) ? ": " + esc(nx.name) : ""}</h3><p id="pcount">Starts in ${n}s</p><div class="row"><button class="btn gold" data-pgo>Play now</button><button class="btn ghost" data-pclose>Close</button></div></div>`);
-    P.countT = setInterval(() => { n--; const c = $("#pcount", ov); if (c) c.textContent = `Starts in ${n}s`; if (n <= 0) { clearInterval(P.countT); goNext(P, nx); } }, 1000);
+    const word = P.listen ? "listening" : "watching";
+    if (P.sleepEp) { P.sleepEp = false; const sl = $("#psleep", ov); if (sl) sl.value = "0"; return layer(P, `<div class="pcard"><span class="eyebrow">Sleep timer</span><h3>Stopped at the end of the episode</h3><div class="row">${nx ? `<button class="btn gold" data-pgo>Play the next one</button>` : ""}<button class="btn ghost" data-pclose>Close</button></div></div>`); }
+    if (!nx) return layer(P, `<div class="pcard"><span class="eyebrow">Finished</span><h3>Thanks for ${word}</h3><button class="btn ghost" data-pclose>Close</button></div>`);
+    const nxName = `Episode ${nx.n}${nx.name && !/^Episode \d+$/.test(nx.name) ? ": " + esc(nx.name) : ""}`;
+    if (!pref.autoplay) return layer(P, `<div class="pcard"><span class="eyebrow">Up next</span><h3>${nxName}</h3><div class="row"><button class="btn gold" data-pgo>Play</button><button class="btn ghost" data-pclose>Close</button></div></div>`);
+    // Screen off or another app open: no countdown to look at, go straight on so the sound doesn't stop.
+    if (document.hidden) return goNext(P, nx);
+    // A short countdown that counts real time, so it still finishes on time if the phone slows the page down.
+    const secs = P.listen ? 3 : 5, until = Date.now() + secs * 1000;
+    layer(P, `<div class="pcard"><span class="eyebrow">Up next</span><h3>${nxName}</h3><p id="pcount">Starts in ${secs}s</p><div class="row"><button class="btn gold" data-pgo>Play now</button><button class="btn ghost" data-pstay>Cancel</button></div></div>`);
+    clearInterval(P.countT);
+    P.countT = setInterval(() => { const n = Math.ceil((until - Date.now()) / 1000); const c = $("#pcount", ov); if (c) c.textContent = `Starts in ${Math.max(0, n)}s`; if (n <= 0) { clearInterval(P.countT); goNext(P, nx); } }, 250);
   });
+  // Leaving the app (screen off, another app) during the countdown: start the next episode now, since the phone may
+  // slow the countdown down in the background.
+  P.onVis = () => { if (document.hidden && P.countT && P.phase === "play" && P.video.ended) { clearInterval(P.countT); P.countT = 0; goNext(P, nextEp(P)); } };
+  document.addEventListener("visibilitychange", P.onVis);
   // Progress bar: tap or drag (finger or mouse); the picture jumps when you let go.
   const frac = (x) => { const r = bar.getBoundingClientRect(); return Math.max(0, Math.min(1, (x - r.left) / r.width)); };
   const showAt = (f) => { fill.style.width = f * 100 + "%"; knob.style.left = f * 100 + "%"; if (v.duration) time.textContent = clock(f * v.duration); };
@@ -256,6 +290,10 @@ function wire(P) {
   bar.addEventListener("keydown", (e) => { if (!v.duration) return; if (e.key === "ArrowRight") v.currentTime = Math.min(v.duration - 1, v.currentTime + 10); else if (e.key === "ArrowLeft") v.currentTime = Math.max(0, v.currentTime - 10); });
   const skip = (sec) => { if (!v.duration) return; v.currentTime = Math.max(0, Math.min(v.duration - 1, v.currentTime + sec)); const fx = $(sec < 0 ? "#pfxl" : "#pfxr", ov); fx.classList.remove("on"); void fx.offsetWidth; fx.classList.add("on"); };
   $("#pq", ov).addEventListener("change", (e) => { if (P.hls) P.hls.currentLevel = Number(e.target.value); });
+  $("#psleep", ov)?.addEventListener("change", (e) => {
+    const val = e.target.value; P.sleepEp = val === "ep"; P.sleepAt = /^\d+$/.test(val) && val !== "0" ? Date.now() + Number(val) * 60e3 : 0;
+    toast(val === "0" ? "Sleep timer off" : val === "ep" ? "Stops at the end of this episode" : `Pauses in ${val} minutes`, 2500);
+  });
   ["contextmenu", "dragstart", "copy"].forEach((t) => ov.addEventListener(t, (e) => e.preventDefault()));
   // Only a real mouse wakes the controls by moving: phones send a fake mouse move just before each tap.
   ov.addEventListener("pointermove", (e) => { if (e.pointerType === "mouse" && (e.movementX || e.movementY)) wake(); });
@@ -282,6 +320,9 @@ function wire(P) {
     if (b.dataset.seek) return skip(Number(b.dataset.seek));
     if (b.hasAttribute("data-pnext")) return goNext(P, nextEp(P));
     if (b.hasAttribute("data-pgo")) { clearInterval(P.countT); return goNext(P, nextEp(P)); }
+    if (b.hasAttribute("data-pstay")) { clearInterval(P.countT); return layer(P, `<div class="pcard"><span class="eyebrow">Autoplay stopped</span><div class="row"><button class="btn gold" data-pgo>Play the next episode</button><button class="btn ghost" data-pclose>Close</button></div></div>`); }
+    if (b.hasAttribute("data-pauto")) { pref.autoplay = !pref.autoplay; b.setAttribute("aria-pressed", pref.autoplay); return toast(pref.autoplay ? "Autoplay on: the next episode starts by itself" : "Autoplay off", 2500); }
+    if (b.hasAttribute("data-pmode")) return switchMode(P);
     if (b.hasAttribute("data-pfs")) return toggleFullscreen(P);
     if (b.hasAttribute("data-pretry")) return start(P, P.ep?.id || P.epId, P.trailer, Math.floor(v.currentTime || 0));
     if (b.hasAttribute("data-preport")) {
@@ -328,6 +369,8 @@ function wire(P) {
       ms.setActionHandler("play", () => playSafe(P)); ms.setActionHandler("pause", () => v.pause());
       ms.setActionHandler("seekbackward", () => skip(-10)); ms.setActionHandler("seekforward", () => skip(10));
       ms.setActionHandler("nexttrack", () => { const nx = nextEp(P); if (nx) goNext(P, nx); });
+      ms.setActionHandler("previoustrack", () => { if (v.currentTime > 10) { v.currentTime = 0; return; } const pv = prevEp(P); if (pv) goNext(P, pv); });
+      ms.setActionHandler("seekto", (d) => { if (v.duration && d.seekTime != null) v.currentTime = Math.min(v.duration - 1, d.seekTime); posState(P); });
     } catch { /* not every action exists everywhere */ }
   }
   document.addEventListener("keydown", P.onKey);
@@ -339,12 +382,13 @@ function teardown(fromCode) {
   const P = current; if (!P) return;
   P.destroyed = true; current = null;
   save(P);
-  clearInterval(P.countT); clearTimeout(P.idleT); clearTimeout(P.startT);
+  clearInterval(P.countT); clearTimeout(P.idleT); clearTimeout(P.startT); wakeLock(P, false);
+  document.removeEventListener("visibilitychange", P.onVis);
   document.removeEventListener("keydown", P.onKey);
   window.removeEventListener("popstate", P.onPop);
   document.removeEventListener("fullscreenchange", P.onFs); document.removeEventListener("webkitfullscreenchange", P.onFs);
   try { screen.orientation?.unlock?.(); } catch { /* not supported */ }
-  if ("mediaSession" in navigator) { try { navigator.mediaSession.metadata = null; ["play", "pause", "seekbackward", "seekforward", "nexttrack"].forEach((a) => navigator.mediaSession.setActionHandler(a, null)); } catch { /* ignore */ } }
+  if ("mediaSession" in navigator) { try { navigator.mediaSession.metadata = null; ["play", "pause", "seekbackward", "seekforward", "nexttrack", "previoustrack", "seekto"].forEach((a) => navigator.mediaSession.setActionHandler(a, null)); } catch { /* ignore */ } }
   try { P.video.pause(); P.hls?.destroy(); P.video.removeAttribute("src"); P.video.load(); } catch { /* ignore */ }
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   else if (document.webkitFullscreenElement) document.webkitExitFullscreen?.();
@@ -371,3 +415,26 @@ function toggleFullscreen(P) {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Lock-screen progress bar (Android shows it on the media notification).
+function posState(P) {
+  const v = P.video;
+  try { if (navigator.mediaSession?.setPositionState && v.duration && isFinite(v.duration)) navigator.mediaSession.setPositionState({ duration: v.duration, position: Math.min(v.currentTime, v.duration), playbackRate: v.playbackRate || 1 }); } catch { /* ignore */ }
+}
+
+// Keep the screen on while someone is watching the picture; let it sleep while they only listen.
+async function wakeLock(P, on) {
+  try {
+    if (on && !P.lock && navigator.wakeLock && !document.hidden) { P.lock = await navigator.wakeLock.request("screen"); P.lock.addEventListener?.("release", () => { P.lock = null; }); }
+    else if (!on && P.lock) { const l = P.lock; P.lock = null; await l.release(); }
+  } catch { P.lock = null; }
+}
+
+// Switch between watching and listening at the same point, without the rating card or another ad.
+function switchMode(P) {
+  if (P.trailer) return;
+  const at = Math.floor(P.video.currentTime || 0);
+  const opts = { api: P.api, title: P.title, episodes: P.episodes, epId: P.ep?.id || P.epId, trailer: false, startAt: at, ads: P.ads, direct: P.direct,
+    onNeedPlan: P.onNeedPlan, onNeedSignIn: P.onNeedSignIn, onNeedAge: P.onNeedAge, onClosed: P.onClosed, listen: !P.listen, skipIntro: true, midDone: P.midDone };
+  openPlayer(opts).then(() => { if (current && current.listen) toast("Listening: lock your phone or switch apps, it keeps playing", 3500); });
+}
