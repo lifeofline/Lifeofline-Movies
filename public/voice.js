@@ -7,7 +7,10 @@
 // arrives as long sentences and is ignored, a command is one to three words.
 
 const SR = typeof window !== "undefined" ? window.SpeechRecognition || window.webkitSpeechRecognition : null;
-export const voiceSupported = () => !!SR;
+// iPhone / iPad: Safari can't listen and play at the same time. Starting the microphone takes over the sound and
+// breaks the video ("couldn't be decoded"), so voice is off there; earphones and "Hey Siri, previous track" do the job.
+const IOS = typeof navigator !== "undefined" && (/iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1));
+export const voiceSupported = () => !!SR && !IOS;
 
 // Command words, in Devanagari (what Hindi recognition usually returns), Urdu and Roman/English.
 const COMMANDS = [
@@ -32,12 +35,14 @@ export function parseCommand(text) {
 
 // Starts listening; returns { stop }. Restarts by itself (browsers end a session after a pause) until stopped.
 export function startVoice({ onCommand, onState, lang = "hi-IN" }) {
-  if (!SR) { onState?.("unsupported"); return { stop() {} }; }
-  let rec = null, on = true, last = 0, fails = 0, restartT = 0;
+  if (!voiceSupported()) { onState?.("unsupported"); return { stop() {} }; }
+  let rec = null, on = true, last = 0, fails = 0, restartT = 0, started = false;
+  // Never hang on "Starting the microphone…": if it hasn't started in 6 seconds, give up and say so.
+  const guardT = setTimeout(() => { if (!started && on) { on = false; try { rec?.abort(); } catch { /* ignore */ } onState?.("error"); } }, 6000);
   const make = () => {
     rec = new SR();
     rec.lang = lang; rec.continuous = true; rec.interimResults = false; rec.maxAlternatives = 3;
-    rec.onstart = () => { fails = 0; onState?.("listening"); };
+    rec.onstart = () => { started = true; clearTimeout(guardT); fails = 0; onState?.("listening"); };
     rec.onresult = (e) => {
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const r = e.results[i];
@@ -65,5 +70,5 @@ export function startVoice({ onCommand, onState, lang = "hi-IN" }) {
     try { rec.start(); } catch { onState?.("error"); }
   };
   make();
-  return { stop() { on = false; clearTimeout(restartT); try { rec?.abort(); } catch { /* ignore */ } onState?.("off"); } };
+  return { stop() { on = false; clearTimeout(restartT); clearTimeout(guardT); try { rec?.abort(); } catch { /* ignore */ } onState?.("off"); } };
 }

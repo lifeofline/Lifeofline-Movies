@@ -96,6 +96,7 @@ export async function openPlayer(opts) {
   const P = current = { ...opts, ov, listen, vertical, poetry: isPoetry(title) && !opts.trailer, shers: [], sherI: -1, loopN: opts.loopN || 1, loopLeft: 0, video: $("#pv", ov), sleepAt: 0, sleepEp: false, hls: null, ep: null, res: null, midDone: false, phase: "load", saveT: 0, idleT: 0, destroyed: false };
   if (!had) history.pushState({ player: 1 }, "");
   wire(P);
+  if (pref.voice && !voiceSupported()) pref.voice = false; // e.g. switched on before it was turned off for iPhone
   if (!opts.trailer && pref.voice && voiceSupported()) voiceOn(P, true);
   await start(P, opts.epId, opts.trailer, opts.startAt, opts.skipIntro);
 }
