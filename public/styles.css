@@ -518,7 +518,7 @@ html { overflow-x: clip; }
 @media (max-height: 640px) { .plisten .lhint { display: none; } .plisten { gap: 10px; padding-top: calc(70px + env(safe-area-inset-top, 0px)); } }
 @media (max-width: 520px) { .pmode span, .ptog { font-size: 13px; } .pmode { padding: 8px 12px; } }
 /* Repeat sher, sher loop, sher list, and the sher shown while listening */
-.pctl.pbtns { flex-wrap: wrap; row-gap: 8px; }
+.pctl.pbtns { flex-wrap: nowrap; position: relative; min-width: 0; }
 .psher, .ploop, .plist { flex: none; }
 .psher[hidden], .ploop[hidden], .plist[hidden] { display: none; }
 .psher { background: rgba(244,173,61,.22); }
@@ -553,3 +553,13 @@ html { overflow-x: clip; }
 
 .pshake { flex: none; }
 .pshake[aria-pressed="true"] { background: var(--gold); color: #1c1300; }
+
+/* One row of player buttons; the rest live under "⋯ More" */
+.pctl.pbtns > .pbtn { white-space: nowrap; }
+.pmenu { position: absolute; right: 0; bottom: calc(100% + 10px); z-index: 6; display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-width: 230px; max-width: calc(100vw - 32px); padding: 10px; border-radius: 14px; background: rgba(20,15,28,.97); box-shadow: 0 12px 40px rgba(0,0,0,.5); }
+.pmenu[hidden] { display: none; }
+.pmenu .pbtn { justify-content: flex-start; text-align: left; width: 100%; white-space: nowrap; }
+.pmenu .pqual { display: block; }
+.pmenu .pqual[hidden], .pmenu .pqual select[hidden] { display: none; }
+.pmenu .pqual select { width: 100%; }
+.pmorebtn[aria-expanded="true"] { background: rgba(255,255,255,.22); }

@@ -24,6 +24,7 @@ const pref = {
   get voice() { try { return localStorage.getItem("lm-voice") === "1"; } catch { return false; } }, set voice(on) { try { localStorage.setItem("lm-voice", on ? "1" : "0"); } catch { /* ignore */ } },
   get shake() { try { return localStorage.getItem("lm-shake") === "1"; } catch { return false; } }, set shake(on) { try { localStorage.setItem("lm-shake", on ? "1" : "0"); } catch { /* ignore */ } },
   get autoplay() { try { return localStorage.getItem("lm-autoplay") !== "0"; } catch { return true; } }, set autoplay(on) { try { localStorage.setItem("lm-autoplay", on ? "1" : "0"); } catch { /* ignore */ } } };
+const loopLabel = (n) => `🔁 Each sher: ${n === 1 ? "once" : n === 2 ? "twice" : n + " times"}`;
 const SLEEP = [["0", "Off"], ["ep", "End of episode"], ["15", "15 min"], ["30", "30 min"], ["60", "1 hour"]];
 const track = (P, type, extra = {}) => { try { P.api.track?.(type, { titleId: P.title.id, epId: P.ep?.id || "", ...extra }); } catch { /* best effort */ } };
 
@@ -81,15 +82,18 @@ export async function openPlayer(opts) {
         </div>
         <div class="pctl pbtns">
           <button class="pbtn psher" data-psher id="psherb" hidden aria-label="Repeat the last sher">↺ Sher</button>
-          <button class="pbtn ploop" data-ploop id="ploop" hidden aria-label="Repeat each sher">🔁 ×1</button>
           <button class="pbtn plist" data-plist id="plist" hidden aria-label="List of shers">☰ Shers</button>
-          ${opts.trailer || !voiceSupported() ? "" : `<button class="pbtn pvoice" data-pvoice id="pvoice" aria-pressed="false" aria-label="Voice commands">🎙️ Voice</button>`}
-          ${!opts.trailer && shakeSupported() && isPoetry(title) ? `<button class="pbtn pshake" data-pshake id="pshake" aria-pressed="false" aria-label="Shake the phone to repeat the sher">📳 Shake</button>` : ""}
-          <button class="pbtn ptog" data-pauto id="pauto" aria-pressed="${pref.autoplay}" hidden><span class="sw" aria-hidden="true"></span>Autoplay</button>
-          ${listen ? `<label class="pqual"><span class="sr">Sleep timer</span><select id="psleep" aria-label="Sleep timer">${SLEEP.map(([v, l]) => `<option value="${v}">${v === "0" ? "Sleep timer" : "Sleep: " + l}</option>`).join("")}</select></label>` : ""}
           <span class="pspace"></span>
-          <label class="pqual" ${listen ? "hidden" : ""}><span class="sr">Quality</span><select id="pq" aria-label="Quality"><option value="-1">Auto</option></select></label>
+          <button class="pbtn pmorebtn" data-pmore id="pmoreb" aria-expanded="false" aria-controls="pmenu" aria-label="More options">⋯ More</button>
           ${listen ? "" : `<button class="pic" data-pfs aria-label="Full screen" id="pfsb">${ICON_FS}</button>`}
+          <div class="pmenu" id="pmenu" hidden role="group" aria-label="Player options">
+            <button class="pbtn ptog" data-pauto id="pauto" aria-pressed="${pref.autoplay}" hidden><span class="sw" aria-hidden="true"></span>Autoplay next episode</button>
+            <button class="pbtn ploop" data-ploop id="ploop" hidden aria-label="Repeat each sher">🔁 Each sher: once</button>
+            ${opts.trailer || !voiceSupported() ? "" : `<button class="pbtn pvoice" data-pvoice id="pvoice" aria-pressed="false" aria-label="Voice commands">🎙️ Voice: say “phir se”</button>`}
+            ${!opts.trailer && shakeSupported() && isPoetry(title) ? `<button class="pbtn pshake" data-pshake id="pshake" aria-pressed="false" aria-label="Shake the phone to repeat the sher">📳 Shake to repeat</button>` : ""}
+            ${listen ? `<label class="pqual"><span class="sr">Sleep timer</span><select id="psleep" aria-label="Sleep timer">${SLEEP.map(([v, l]) => `<option value="${v}">${v === "0" ? "Sleep timer: off" : "Sleep: " + l}</option>`).join("")}</select></label>` : ""}
+            <label class="pqual" ${listen ? "hidden" : ""}><span class="sr">Quality</span><select id="pq" aria-label="Quality"><option value="-1">Quality: Auto</option></select></label>
+          </div>
         </div>
       </div>
     </div>`;
@@ -133,7 +137,7 @@ async function start(P, epId, trailer, startAt, skipIntro = false) {
   P.shers = !trailer && Array.isArray(P.ep?.shers) ? P.ep.shers.filter((x) => isFinite(x?.t)) : []; P.sherI = -1; P.loopLeft = 0;
   // Exact "↺ Sher" only when this episode has its sher timings; until then the button says what it really does.
   { const sb = $("#psherb", P.ov); sb.hidden = !P.poetry || trailer; sb.textContent = P.shers.length ? "↺ Sher" : `↺ ${FALLBACK_BACK}s`; sb.setAttribute("aria-label", P.shers.length ? "Repeat the last sher" : `Back ${FALLBACK_BACK} seconds`); } $("#ploop", P.ov).hidden = !P.shers.length; $("#plist", P.ov).hidden = !P.shers.length;
-  $("#ploop", P.ov).textContent = `🔁 ×${P.loopN}`; $("#ploop", P.ov).setAttribute("aria-pressed", P.loopN > 1);
+  $("#ploop", P.ov).textContent = loopLabel(P.loopN); $("#ploop", P.ov).setAttribute("aria-pressed", P.loopN > 1);
   showSher(P, -1);
   const nx = nextEp(P); $("#pnext", P.ov).hidden = !nx; $("#pauto", P.ov).hidden = !(P.episodes?.length > 1) || trailer;
   if (P.listen) { const le = $("#lep", P.ov); if (le) le.textContent = P.title.kind === "movie" ? "" : `Episode ${r.n}${r.name && !/^Episode \d+$/.test(r.name) ? " · " + r.name : ""}`; }
@@ -175,7 +179,7 @@ async function start(P, epId, trailer, startAt, skipIntro = false) {
 async function attach(P, src) {
   const v = P.video;
   if (P.hls) { P.hls.destroy(); P.hls = null; }
-  const q = $("#pq", P.ov); q.innerHTML = `<option value="-1">Auto</option>`; q.hidden = true;
+  const q = $("#pq", P.ov); q.innerHTML = `<option value="-1">Quality: Auto</option>`; q.hidden = true;
   if (/\.mp4(\?|$)/i.test(src)) { v.src = src; return; }
   const native = !!v.canPlayType("application/vnd.apple.mpegurl");
   try { await loadScript(HLS_JS); } catch { if (native) { v.src = src; return; } throw new Error("The video player didn't load. Check your connection and try again."); }
@@ -186,7 +190,7 @@ async function attach(P, src) {
   const hls = P.hls = new window.Hls({ capLevelToPlayerSize: true, maxBufferLength: 30 });
   hls.on(window.Hls.Events.MANIFEST_PARSED, (_, d) => {
     const lv = d.levels.map((l, i) => ({ i, h: l.height })).filter((l) => l.h).sort((a, b) => b.h - a.h);
-    q.innerHTML = `<option value="-1">Auto</option>` + lv.map((l) => `<option value="${l.i}">${l.h}p</option>`).join("");
+    q.innerHTML = `<option value="-1">Quality: Auto</option>` + lv.map((l) => `<option value="${l.i}">Quality: ${l.h}p</option>`).join("");
     q.hidden = lv.length < 2;
   });
   hls.on(window.Hls.Events.ERROR, (_, d) => {
@@ -252,7 +256,7 @@ function wire(P) {
   const fill = $("#pfill", ov), buf = $("#pbuf", ov), time = $("#ptime", ov), left = $("#pleft", ov), knob = $("#pknob", ov), ppb = $("#ppb", ov), bar = $("#pbar", ov), cue = $("#pcue", ov);
   ppb.innerHTML = ICON_PLAY;
   // Controls appear on a tap and fade after a few seconds of playing (like Netflix / ZEE5); they stay while paused.
-  const hide = () => { if (!v.paused && !P.seeking && !P.listen) ov.classList.add("idle"); };
+  const hide = () => { if (!v.paused && !P.seeking && !P.listen && $("#pmenu", ov)?.hidden !== false) ov.classList.add("idle"); };
   const wake = () => { ov.classList.remove("idle"); clearTimeout(P.idleT); P.idleT = setTimeout(hide, 3500); };
   P.wake = wake;
   v.addEventListener("play", () => {
@@ -334,6 +338,8 @@ function wire(P) {
   const onPicture = (e) => e.target === v || e.target.id === "pstage" || e.target.id === "pmid";
   ov.addEventListener("click", (e) => {
     const b = e.target.closest("button, [data-pclose], a, select, label");
+    const menu = $("#pmenu", ov);
+    if (menu && !menu.hidden && !e.target.closest("#pmenu, [data-pmore]")) { menu.hidden = true; $("#pmoreb", ov)?.setAttribute("aria-expanded", false); if (!b) return; }
     if (!b) {
       if (!onPicture(e) || P.phase !== "play") return;
       const r = $("#pstage", ov).getBoundingClientRect(), side = e.clientX < r.left + r.width / 3 ? -1 : e.clientX > r.right - r.width / 3 ? 1 : 0;
@@ -355,10 +361,11 @@ function wire(P) {
     if (b.hasAttribute("data-pstay")) { clearInterval(P.countT); return layer(P, `<div class="pcard"><span class="eyebrow">Autoplay stopped</span><div class="row"><button class="btn gold" data-pgo>Play the next episode</button><button class="btn ghost" data-pclose>Close</button></div></div>`); }
     if (b.hasAttribute("data-pauto")) { pref.autoplay = !pref.autoplay; b.setAttribute("aria-pressed", pref.autoplay); return toast(pref.autoplay ? "Autoplay on: the next episode starts by itself" : "Autoplay off", 2500); }
     if (b.hasAttribute("data-pmode")) return switchMode(P);
+    if (b.hasAttribute("data-pmore")) { const m = $("#pmenu", ov), open = m.hidden; m.hidden = !open; b.setAttribute("aria-expanded", open); return; }
     if (b.hasAttribute("data-psher")) return repeatSher(P);
     if (b.hasAttribute("data-pshake")) { const on = !P.shake; shakeOn(P, on).then((ok) => { pref.shake = ok && on; if (ok && on) toast("Shake on. Give the phone two quick shakes to hear the sher again", 4000); }); return; }
     if (b.hasAttribute("data-pvoice")) { const on = !P.voice; pref.voice = on; voiceOn(P, on); if (on) toast("Voice on. Just say “phir se”, “dobara”, “agla”, “pichla”, “ruko” or “chalao”", 4500); return; }
-    if (b.hasAttribute("data-ploop")) { P.loopN = P.loopN >= 3 ? 1 : P.loopN + 1; P.loopLeft = P.loopN - 1; b.textContent = `🔁 ×${P.loopN}`; b.setAttribute("aria-pressed", P.loopN > 1); return toast(P.loopN > 1 ? `Each sher plays ${P.loopN} times` : "Each sher plays once", 2200); }
+    if (b.hasAttribute("data-ploop")) { P.loopN = P.loopN >= 3 ? 1 : P.loopN + 1; P.loopLeft = P.loopN - 1; b.textContent = loopLabel(P.loopN); b.setAttribute("aria-pressed", P.loopN > 1); return toast(P.loopN > 1 ? `Each sher plays ${P.loopN} times` : "Each sher plays once", 2200); }
     if (b.hasAttribute("data-plist")) return sherList(P);
     if (b.dataset.pjump) { layer(P, ""); v.currentTime = Number(b.dataset.pjump); P.loopLeft = P.loopN - 1; if (v.paused) playSafe(P); return; }
     if (b.hasAttribute("data-pfs")) return toggleFullscreen(P);
