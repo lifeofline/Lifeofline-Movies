@@ -120,7 +120,8 @@ async function start(P, epId, trailer, startAt, skipIntro = false) {
   P.ep = trailer ? null : (P.episodes || []).find((x) => x.id === r.epId) || { id: r.epId, n: r.n, name: r.name };
   $("#pname", P.ov).textContent = trailer ? `${P.title.title} · ${P.direct ? "Animated poster teaser" : "Trailer"}` : P.title.kind === "movie" ? P.title.title : `${P.title.title} · Ep ${r.n}${P.title.demo ? " · Demo story card" : ""}`;
   P.shers = !trailer && Array.isArray(P.ep?.shers) ? P.ep.shers.filter((x) => isFinite(x?.t)) : []; P.sherI = -1; P.loopLeft = 0;
-  $("#psherb", P.ov).hidden = !P.poetry || trailer; $("#ploop", P.ov).hidden = !P.shers.length; $("#plist", P.ov).hidden = !P.shers.length;
+  // Exact "↺ Sher" only when this episode has its sher timings; until then the button says what it really does.
+  { const sb = $("#psherb", P.ov); sb.hidden = !P.poetry || trailer; sb.textContent = P.shers.length ? "↺ Sher" : `↺ ${FALLBACK_BACK}s`; sb.setAttribute("aria-label", P.shers.length ? "Repeat the last sher" : `Back ${FALLBACK_BACK} seconds`); } $("#ploop", P.ov).hidden = !P.shers.length; $("#plist", P.ov).hidden = !P.shers.length;
   $("#ploop", P.ov).textContent = `🔁 ×${P.loopN}`; $("#ploop", P.ov).setAttribute("aria-pressed", P.loopN > 1);
   showSher(P, -1);
   const nx = nextEp(P); $("#pnext", P.ov).hidden = !nx; $("#pauto", P.ov).hidden = !(P.episodes?.length > 1) || trailer;
