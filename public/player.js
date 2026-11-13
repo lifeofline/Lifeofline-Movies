@@ -4,6 +4,7 @@
 // Saves where you stopped, reports starts / completions / errors (Admin → Numbers) and never leaves a spinner forever.
 import { $, esc, clock, loadScript, toast } from "./util.js";
 import { freeEpisode } from "./access.js";
+import { voiceSupported, startVoice } from "./voice.js";
 import { isPoetry, FALLBACK_BACK, repeatTarget, sherIndex, fmt } from "./shers.js";
 
 const HLS_JS = "https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.15/hls.min.js";
@@ -19,7 +20,9 @@ const ICON_FS_EXIT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
 const ICON_HEAD = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3" y="14" width="5" height="7" rx="2"/><rect x="16" y="14" width="5" height="7" rx="2"/></svg>`;
 const ICON_TV = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8"/></svg>`;
 // Autoplay the next episode (on unless the viewer turns it off) and the listening-mode sleep timer.
-const pref = { get autoplay() { try { return localStorage.getItem("lm-autoplay") !== "0"; } catch { return true; } }, set autoplay(on) { try { localStorage.setItem("lm-autoplay", on ? "1" : "0"); } catch { /* ignore */ } } };
+const pref = {
+  get voice() { try { return localStorage.getItem("lm-voice") === "1"; } catch { return false; } }, set voice(on) { try { localStorage.setItem("lm-voice", on ? "1" : "0"); } catch { /* ignore */ } },
+  get autoplay() { try { return localStorage.getItem("lm-autoplay") !== "0"; } catch { return true; } }, set autoplay(on) { try { localStorage.setItem("lm-autoplay", on ? "1" : "0"); } catch { /* ignore */ } } };
 const SLEEP = [["0", "Off"], ["ep", "End of episode"], ["15", "15 min"], ["30", "30 min"], ["60", "1 hour"]];
 const track = (P, type, extra = {}) => { try { P.api.track?.(type, { titleId: P.title.id, epId: P.ep?.id || "", ...extra }); } catch { /* best effort */ } };
 
@@ -60,6 +63,7 @@ export async function openPlayer(opts) {
       <div class="ppv" id="ppv" hidden></div>
       <div class="pseekfx l" id="pfxl" aria-hidden="true">${ICON_BACK}<span>10 sec</span></div><div class="pseekfx r" id="pfxr" aria-hidden="true">${ICON_FWD}<span>10 sec</span></div>
       <div class="plyr" id="plyr"></div>
+      <div class="pvst" id="pvst" hidden aria-live="polite"><i></i><span id="pvtx">Say “phir se”, “agla” or “ruko”</span></div>
       <div class="ptop"><button class="pic" data-pclose aria-label="Close">${ICON_X}</button><div class="pttl"><b id="pname">${esc(title.title)}</b><span class="rating" id="prate">${esc(title.rating || "U")}</span></div>
         ${opts.trailer ? "" : `<button class="pbtn pmode" data-pmode aria-label="${listen ? "Watch the video" : "Listen with the screen off"}">${listen ? ICON_TV + "<span>Watch</span>" : ICON_HEAD + "<span>Listen</span>"}</button>`}
         <button class="pbtn pnext" data-pnext id="pnext" hidden aria-label="Next episode">Next<span class="nx-long"> episode</span> ${ICON_NEXT}</button></div>
@@ -78,6 +82,7 @@ export async function openPlayer(opts) {
           <button class="pbtn psher" data-psher id="psherb" hidden aria-label="Repeat the last sher">↺ Sher</button>
           <button class="pbtn ploop" data-ploop id="ploop" hidden aria-label="Repeat each sher">🔁 ×1</button>
           <button class="pbtn plist" data-plist id="plist" hidden aria-label="List of shers">☰ Shers</button>
+          ${opts.trailer || !voiceSupported() ? "" : `<button class="pbtn pvoice" data-pvoice id="pvoice" aria-pressed="false" aria-label="Voice commands">🎙️ Voice</button>`}
           <button class="pbtn ptog" data-pauto id="pauto" aria-pressed="${pref.autoplay}" hidden><span class="sw" aria-hidden="true"></span>Autoplay</button>
           ${listen ? `<label class="pqual"><span class="sr">Sleep timer</span><select id="psleep" aria-label="Sleep timer">${SLEEP.map(([v, l]) => `<option value="${v}">${v === "0" ? "Sleep timer" : "Sleep: " + l}</option>`).join("")}</select></label>` : ""}
           <span class="pspace"></span>
@@ -91,6 +96,7 @@ export async function openPlayer(opts) {
   const P = current = { ...opts, ov, listen, vertical, poetry: isPoetry(title) && !opts.trailer, shers: [], sherI: -1, loopN: opts.loopN || 1, loopLeft: 0, video: $("#pv", ov), sleepAt: 0, sleepEp: false, hls: null, ep: null, res: null, midDone: false, phase: "load", saveT: 0, idleT: 0, destroyed: false };
   if (!had) history.pushState({ player: 1 }, "");
   wire(P);
+  if (!opts.trailer && pref.voice && voiceSupported()) voiceOn(P, true);
   await start(P, opts.epId, opts.trailer, opts.startAt, opts.skipIntro);
 }
 
@@ -289,6 +295,8 @@ function wire(P) {
   });
   // Leaving the app (screen off, another app) during the countdown: start the next episode now, since the phone may
   // slow the countdown down in the background.
+  P.onVisVoice = () => { if (document.hidden) { if (P.voice) { P.voice.stop(); P.voice = null; P.voicePaused = true; } } else if (P.voicePaused && pref.voice) { P.voicePaused = false; voiceOn(P, true); } };
+  document.addEventListener("visibilitychange", P.onVisVoice);
   P.onVis = () => { if (document.hidden && P.countT && P.phase === "play" && P.video.ended) { clearInterval(P.countT); P.countT = 0; goNext(P, nextEp(P)); } };
   document.addEventListener("visibilitychange", P.onVis);
   // Progress bar: tap or drag (finger or mouse); the picture jumps when you let go.
@@ -336,6 +344,7 @@ function wire(P) {
     if (b.hasAttribute("data-pauto")) { pref.autoplay = !pref.autoplay; b.setAttribute("aria-pressed", pref.autoplay); return toast(pref.autoplay ? "Autoplay on: the next episode starts by itself" : "Autoplay off", 2500); }
     if (b.hasAttribute("data-pmode")) return switchMode(P);
     if (b.hasAttribute("data-psher")) return repeatSher(P);
+    if (b.hasAttribute("data-pvoice")) { const on = !P.voice; pref.voice = on; voiceOn(P, on); if (on) toast("Voice on. Just say “phir se”, “dobara”, “agla”, “pichla”, “ruko” or “chalao”", 4500); return; }
     if (b.hasAttribute("data-ploop")) { P.loopN = P.loopN >= 3 ? 1 : P.loopN + 1; P.loopLeft = P.loopN - 1; b.textContent = `🔁 ×${P.loopN}`; b.setAttribute("aria-pressed", P.loopN > 1); return toast(P.loopN > 1 ? `Each sher plays ${P.loopN} times` : "Each sher plays once", 2200); }
     if (b.hasAttribute("data-plist")) return sherList(P);
     if (b.dataset.pjump) { layer(P, ""); v.currentTime = Number(b.dataset.pjump); P.loopLeft = P.loopN - 1; if (v.paused) playSafe(P); return; }
@@ -401,6 +410,8 @@ function teardown(fromCode) {
   save(P);
   clearInterval(P.countT); clearTimeout(P.idleT); clearTimeout(P.startT); wakeLock(P, false);
   document.removeEventListener("visibilitychange", P.onVis);
+  document.removeEventListener("visibilitychange", P.onVisVoice);
+  if (P.voice) { P.voice.stop(); P.voice = null; }
   document.removeEventListener("keydown", P.onKey);
   window.removeEventListener("popstate", P.onPop);
   document.removeEventListener("fullscreenchange", P.onFs); document.removeEventListener("webkitfullscreenchange", P.onFs);
@@ -487,4 +498,33 @@ function sherList(P) {
   layer(P, `<div class="pcard plistc"><div class="plbox"><span class="eyebrow">Shers in this ghazal</span>
     <div class="shl">${P.shers.map((x, i) => `<button class="shr ${i === cur ? "on" : ""}" data-pjump="${x.t}"><span class="tm">${fmt(x.t)}</span><span class="tx">${esc(x.text || `Sher ${i + 1}`).replace(/\n/g, "<br>")}</span></button>`).join("")}</div>
     <div class="row"><button class="btn ghost" data-plclose>Back to the player</button></div></div></div>`);
+}
+
+// ---- Voice commands -----------------------------------------------------------------------------------
+function voiceOn(P, on) {
+  const btn = $("#pvoice", P.ov), pill = $("#pvst", P.ov), tx = $("#pvtx", P.ov);
+  if (P.voice) { P.voice.stop(); P.voice = null; }
+  btn?.setAttribute("aria-pressed", on); if (pill) pill.hidden = !on;
+  if (!on) return;
+  if (tx) tx.textContent = "Starting the microphone…";
+  P.voice = startVoice({
+    onState: (st) => {
+      if (!tx || P.destroyed) return;
+      if (st === "listening") { pill.classList.add("live"); tx.textContent = P.poetry ? "Say “phir se”, “agla” or “ruko”" : "Say “dobara”, “agla” or “ruko”"; }
+      else if (st === "denied" || st === "nomic" || st === "error" || st === "unsupported") {
+        pill.classList.remove("live"); pref.voice = false; btn?.setAttribute("aria-pressed", false); pill.hidden = true; P.voice = null;
+        toast(st === "denied" ? "Microphone not allowed. Allow it for this site in the browser settings to use voice." : st === "nomic" ? "No microphone found." : "Voice commands aren't working in this browser. Try Chrome.", 5000);
+      }
+    },
+    onCommand: (cmd, heard) => voiceCommand(P, cmd, heard),
+  });
+}
+function voiceCommand(P, cmd, heard) {
+  if (P.destroyed) return;
+  const v = P.video, say = (t) => { const tx = $("#pvtx", P.ov); if (tx) { tx.textContent = `“${heard.trim()}” · ${t}`; clearTimeout(P.vsayT); P.vsayT = setTimeout(() => { if (tx) tx.textContent = "Listening…"; }, 2500); } };
+  if (cmd === "repeat") { say(P.poetry ? "repeating the sher" : "back 10 seconds"); if (P.poetry) repeatSher(P); else if (v.duration) v.currentTime = Math.max(0, v.currentTime - 10); return; }
+  if (cmd === "next") { const nx = nextEp(P); say(nx ? "next episode" : "this is the last episode"); if (nx) { clearInterval(P.countT); goNext(P, nx); } return; }
+  if (cmd === "prev") { const pv = prevEp(P); say(pv ? "previous episode" : "this is the first episode"); if (pv) goNext(P, pv); return; }
+  if (cmd === "pause") { say("paused"); v.pause(); return; }
+  if (cmd === "play") { say("playing"); if (P.phase === "play" && v.paused) playSafe(P); else if (v.ended) { const nx = nextEp(P); if (nx) goNext(P, nx); } }
 }

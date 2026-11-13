@@ -539,3 +539,14 @@ html { overflow-x: clip; }
 @media (max-height: 700px) { .pov.listen .plisten .lart { width: min(46vw, 28dvh, 240px); } }
 .epsh textarea { background: var(--ink); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; color: var(--fg); font: inherit; font-size: 14px; width: 100%; }
 .epsh code { font-family: var(--f-mono); font-size: 12px; }
+/* Voice commands */
+.pvoice { flex: none; }
+.pvoice[aria-pressed="true"] { background: var(--gold); color: #1c1300; }
+.pvst { position: absolute; z-index: 5; left: 50%; transform: translateX(-50%); top: calc(64px + env(safe-area-inset-top, 0px)); display: flex; align-items: center; gap: 8px; max-width: calc(100% - 32px); padding: 6px 12px; border-radius: 999px; background: rgba(0,0,0,.6); color: #fff; font-size: 13px; pointer-events: none; }
+.pvst[hidden] { display: none; }
+.pvst span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pvst i { width: 9px; height: 9px; border-radius: 50%; background: #888; flex: none; }
+.pvst.live i { background: #ff5a4f; animation: pvpulse 1.4s ease-in-out infinite; }
+@keyframes pvpulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .pvst.live i { animation: none; } }
+.pov.listen .pvst { top: calc(64px + env(safe-area-inset-top, 0px)); }
