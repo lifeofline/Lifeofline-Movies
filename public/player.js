@@ -22,6 +22,7 @@ const ICON_TV = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stro
 // Autoplay the next episode (on unless the viewer turns it off) and the listening-mode sleep timer.
 const pref = {
   get voice() { try { return localStorage.getItem("lm-voice") === "1"; } catch { return false; } }, set voice(on) { try { localStorage.setItem("lm-voice", on ? "1" : "0"); } catch { /* ignore */ } },
+  get shake() { try { return localStorage.getItem("lm-shake") === "1"; } catch { return false; } }, set shake(on) { try { localStorage.setItem("lm-shake", on ? "1" : "0"); } catch { /* ignore */ } },
   get autoplay() { try { return localStorage.getItem("lm-autoplay") !== "0"; } catch { return true; } }, set autoplay(on) { try { localStorage.setItem("lm-autoplay", on ? "1" : "0"); } catch { /* ignore */ } } };
 const SLEEP = [["0", "Off"], ["ep", "End of episode"], ["15", "15 min"], ["30", "30 min"], ["60", "1 hour"]];
 const track = (P, type, extra = {}) => { try { P.api.track?.(type, { titleId: P.title.id, epId: P.ep?.id || "", ...extra }); } catch { /* best effort */ } };
@@ -83,6 +84,7 @@ export async function openPlayer(opts) {
           <button class="pbtn ploop" data-ploop id="ploop" hidden aria-label="Repeat each sher">🔁 ×1</button>
           <button class="pbtn plist" data-plist id="plist" hidden aria-label="List of shers">☰ Shers</button>
           ${opts.trailer || !voiceSupported() ? "" : `<button class="pbtn pvoice" data-pvoice id="pvoice" aria-pressed="false" aria-label="Voice commands">🎙️ Voice</button>`}
+          ${!opts.trailer && shakeSupported() && isPoetry(title) ? `<button class="pbtn pshake" data-pshake id="pshake" aria-pressed="false" aria-label="Shake the phone to repeat the sher">📳 Shake</button>` : ""}
           <button class="pbtn ptog" data-pauto id="pauto" aria-pressed="${pref.autoplay}" hidden><span class="sw" aria-hidden="true"></span>Autoplay</button>
           ${listen ? `<label class="pqual"><span class="sr">Sleep timer</span><select id="psleep" aria-label="Sleep timer">${SLEEP.map(([v, l]) => `<option value="${v}">${v === "0" ? "Sleep timer" : "Sleep: " + l}</option>`).join("")}</select></label>` : ""}
           <span class="pspace"></span>
@@ -96,6 +98,8 @@ export async function openPlayer(opts) {
   const P = current = { ...opts, ov, listen, vertical, poetry: isPoetry(title) && !opts.trailer, shers: [], sherI: -1, loopN: opts.loopN || 1, loopLeft: 0, video: $("#pv", ov), sleepAt: 0, sleepEp: false, hls: null, ep: null, res: null, midDone: false, phase: "load", saveT: 0, idleT: 0, destroyed: false };
   if (!had) history.pushState({ player: 1 }, "");
   wire(P);
+  // Shake was on last time: Android starts it straight away; iPhone needs one tap first (its motion permission rule).
+  if (P.poetry && pref.shake && shakeSupported()) { if (needsMotionAsk()) ov.addEventListener("pointerup", () => shakeOn(P, true), { once: true }); else shakeOn(P, true); }
   if (pref.voice && !voiceSupported()) pref.voice = false; // e.g. switched on before it was turned off for iPhone
   if (!opts.trailer && pref.voice && voiceSupported()) voiceOn(P, true);
   await start(P, opts.epId, opts.trailer, opts.startAt, opts.skipIntro);
@@ -251,7 +255,14 @@ function wire(P) {
   const hide = () => { if (!v.paused && !P.seeking && !P.listen) ov.classList.add("idle"); };
   const wake = () => { ov.classList.remove("idle"); clearTimeout(P.idleT); P.idleT = setTimeout(hide, 3500); };
   P.wake = wake;
-  v.addEventListener("play", () => { wakeLock(P, !P.listen); if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "playing"; ppb.innerHTML = ICON_PAUSE; ppb.setAttribute("aria-label", "Pause"); wake(); });
+  v.addEventListener("play", () => {
+    // Paused for a while on a ghazal: pick up from the start of the sher, not mid-line.
+    if (P.poetry && P.pausedAt && Date.now() - P.pausedAt > 4000 && P.phase === "play" && v.currentTime > 3 && !P.seeking) {
+      const inSher = P.shers.length ? sherIndex(P.shers, v.currentTime) >= 0 : true;
+      const to = !inSher ? v.currentTime : P.shers.length ? repeatTarget(P.shers, v.currentTime + 3) : Math.max(0, v.currentTime - 4);
+      if (to < v.currentTime - 0.5) v.currentTime = to;
+    }
+    P.pausedAt = 0; wakeLock(P, !P.listen); if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "playing"; ppb.innerHTML = ICON_PAUSE; ppb.setAttribute("aria-label", "Pause"); wake(); });
   v.addEventListener("playing", () => {
     ov.classList.remove("buffering");
     if (!P.started && P.phase === "play") { P.started = true; clearTimeout(P.startT); track(P, P.trailer ? "teaser" : "start"); }
@@ -263,7 +274,7 @@ function wire(P) {
     errCard(P, c === 4 ? "This video format isn't supported here." : c === 3 ? "This video couldn't be decoded." : "This video stopped loading.",
       c === 4 ? "Try the latest Chrome, Safari or Edge, or another device. Please report it so we can check the file." : "Press Retry. If it keeps happening, report it and we'll check the video.", "media-" + (c || "?"));
   });
-  v.addEventListener("pause", () => { wakeLock(P, false); if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused"; ppb.innerHTML = ICON_PLAY; ppb.setAttribute("aria-label", "Play"); ov.classList.remove("idle"); clearTimeout(P.idleT); save(P); });
+  v.addEventListener("pause", () => { P.pausedAt = Date.now(); wakeLock(P, false); if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused"; ppb.innerHTML = ICON_PLAY; ppb.setAttribute("aria-label", "Play"); ov.classList.remove("idle"); clearTimeout(P.idleT); save(P); });
   v.addEventListener("timeupdate", () => {
     const d = v.duration || 0;
     if (!P.seeking) { const pct = d ? (v.currentTime / d) * 100 : 0; fill.style.width = pct + "%"; knob.style.left = pct + "%"; }
@@ -345,6 +356,7 @@ function wire(P) {
     if (b.hasAttribute("data-pauto")) { pref.autoplay = !pref.autoplay; b.setAttribute("aria-pressed", pref.autoplay); return toast(pref.autoplay ? "Autoplay on: the next episode starts by itself" : "Autoplay off", 2500); }
     if (b.hasAttribute("data-pmode")) return switchMode(P);
     if (b.hasAttribute("data-psher")) return repeatSher(P);
+    if (b.hasAttribute("data-pshake")) { const on = !P.shake; shakeOn(P, on).then((ok) => { pref.shake = ok && on; if (ok && on) toast("Shake on. Give the phone two quick shakes to hear the sher again", 4000); }); return; }
     if (b.hasAttribute("data-pvoice")) { const on = !P.voice; pref.voice = on; voiceOn(P, on); if (on) toast("Voice on. Just say “phir se”, “dobara”, “agla”, “pichla”, “ruko” or “chalao”", 4500); return; }
     if (b.hasAttribute("data-ploop")) { P.loopN = P.loopN >= 3 ? 1 : P.loopN + 1; P.loopLeft = P.loopN - 1; b.textContent = `🔁 ×${P.loopN}`; b.setAttribute("aria-pressed", P.loopN > 1); return toast(P.loopN > 1 ? `Each sher plays ${P.loopN} times` : "Each sher plays once", 2200); }
     if (b.hasAttribute("data-plist")) return sherList(P);
@@ -394,7 +406,8 @@ function wire(P) {
     const ms = navigator.mediaSession;
     try {
       ms.setActionHandler("play", () => playSafe(P)); ms.setActionHandler("pause", () => v.pause());
-      ms.setActionHandler("seekbackward", () => skip(-10)); ms.setActionHandler("seekforward", () => skip(10));
+      // iPhone's lock screen and AirPods show "skip back" rather than "previous": on poetry it repeats the sher too.
+      ms.setActionHandler("seekbackward", () => { if (P.poetry && P.phase === "play") return repeatSher(P); skip(-10); }); ms.setActionHandler("seekforward", () => skip(10));
       ms.setActionHandler("nexttrack", () => { const nx = nextEp(P); if (nx) goNext(P, nx); });
       ms.setActionHandler("previoustrack", () => { if (P.poetry && P.phase === "play") return repeatSher(P); if (v.currentTime > 10) { v.currentTime = 0; return; } const pv = prevEp(P); if (pv) goNext(P, pv); });
       ms.setActionHandler("seekto", (d) => { if (v.duration && d.seekTime != null) v.currentTime = Math.min(v.duration - 1, d.seekTime); posState(P); });
@@ -413,6 +426,7 @@ function teardown(fromCode) {
   document.removeEventListener("visibilitychange", P.onVis);
   document.removeEventListener("visibilitychange", P.onVisVoice);
   if (P.voice) { P.voice.stop(); P.voice = null; }
+  if (P.shake) { window.removeEventListener("devicemotion", P.shake); P.shake = null; }
   document.removeEventListener("keydown", P.onKey);
   window.removeEventListener("popstate", P.onPop);
   document.removeEventListener("fullscreenchange", P.onFs); document.removeEventListener("webkitfullscreenchange", P.onFs);
@@ -528,4 +542,31 @@ function voiceCommand(P, cmd, heard) {
   if (cmd === "prev") { const pv = prevEp(P); say(pv ? "previous episode" : "this is the first episode"); if (pv) goNext(P, pv); return; }
   if (cmd === "pause") { say("paused"); v.pause(); return; }
   if (cmd === "play") { say("playing"); if (P.phase === "play" && v.paused) playSafe(P); else if (v.ended) { const nx = nextEp(P); if (nx) goNext(P, nx); } }
+}
+
+// ---- Shake to repeat the sher ----------------------------------------------------------------------------
+// Two quick, firm shakes (not walking or putting the phone down) = "phir se". Works with the app open on screen.
+const shakeSupported = () => typeof window !== "undefined" && "DeviceMotionEvent" in window && (navigator.maxTouchPoints || 0) > 0;
+const needsMotionAsk = () => typeof DeviceMotionEvent !== "undefined" && typeof DeviceMotionEvent.requestPermission === "function";
+async function shakeOn(P, on) {
+  const btn = $("#pshake", P.ov);
+  if (P.shake) { window.removeEventListener("devicemotion", P.shake); P.shake = null; }
+  btn?.setAttribute("aria-pressed", false);
+  if (!on) return true;
+  if (needsMotionAsk()) {
+    try { if ((await DeviceMotionEvent.requestPermission()) !== "granted") { toast("Motion access wasn't allowed, so shake can't work. You can allow it in Safari's settings for this site.", 5000); return false; } }
+    catch { toast("Tap Shake again to allow motion access.", 3000); return false; }
+  }
+  let peaks = [], last = 0;
+  P.shake = (e) => {
+    const a = e.accelerationIncludingGravity || e.acceleration; if (!a) return;
+    const g = Math.hypot(a.x || 0, a.y || 0, a.z || 0), now = Date.now();
+    if (Math.abs(g - 9.8) < 14) return;                        // ordinary movement
+    if (now - (peaks.at(-1) || 0) < 120) return;              // the same jolt, not a new shake
+    peaks = peaks.filter((t) => now - t < 900); peaks.push(now);
+    if (peaks.length >= 3 && now - last > 2000) { last = now; peaks = []; if (navigator.vibrate) navigator.vibrate(40); repeatSher(P); toast("📳 Sher again", 1500); }
+  };
+  window.addEventListener("devicemotion", P.shake);
+  btn?.setAttribute("aria-pressed", true);
+  return true;
 }

@@ -550,3 +550,6 @@ html { overflow-x: clip; }
 @keyframes pvpulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
 @media (prefers-reduced-motion: reduce) { .pvst.live i { animation: none; } }
 .pov.listen .pvst { top: calc(64px + env(safe-area-inset-top, 0px)); }
+
+.pshake { flex: none; }
+.pshake[aria-pressed="true"] { background: var(--gold); color: #1c1300; }
