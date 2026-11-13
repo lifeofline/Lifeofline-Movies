@@ -8,6 +8,7 @@ const SHOW_DEMOS = false;
 import { vPitch, slotRail } from "./pitch.js";
 import { LANGS, KINDS, KIDS_OK, freeEpisode } from "./access.js";
 import { openPlayer } from "./player.js";
+import { isPoetry } from "./shers.js";
 import { createHelp } from "./help-widget.js";
 import { initInstall, installCard, markEngaged, STORE_APP } from "./install.js";
 
@@ -408,7 +409,7 @@ async function vTitle(id) {
       ${t.synopsis ? `<p class="desc">${esc(t.synopsis)}</p>${t.desc && t.desc !== t.synopsis ? `<p class="tagline">“${esc(t.desc)}”</p>` : ""}` : `<p class="desc">${esc(t.desc || "")}</p>`}
       <div class="row">
         ${soon ? "" : first && playLabel ? `<button class="btn gold" data-play="${esc(t.id)}" data-ep="${esc(first.id)}" data-nav>▶ ${playLabel}</button>` : !first ? "" : `<a class="btn gold" href="#plans" data-nav>Subscribe to watch · ₹${PRICE}</a>`}
-        ${!soon && first && playLabel && t.format !== "v" && t.kind !== "movie" ? `<button class="btn ghost" data-play="${esc(t.id)}" data-ep="${esc(first.id)}" data-listen data-nav title="Plays the sound only, so you can lock your phone">🎧 Listen</button>` : ""}
+        ${!soon && first && playLabel && t.kind !== "movie" && (t.format !== "v" || isPoetry(t)) ? `<button class="btn ghost" data-play="${esc(t.id)}" data-ep="${esc(first.id)}" data-listen data-nav title="Plays the sound only, so you can lock your phone">🎧 Listen</button>` : ""}
         ${t.trailerUid || t.teaser ? `<button class="btn ${soon ? "gold" : "ghost"}" data-trailer="${esc(t.id)}" data-nav>▶ ${t.trailerUid ? "Trailer" : "Poster teaser"}</button>` : ""}
         <button class="btn ghost" data-listtog="${esc(t.id)}" data-nav>${S.list.includes(t.id) ? "✓ In My List" : "＋ My List"}</button>
         <button class="btn ghost" data-share="${esc(t.id)}" data-nav>Share</button>

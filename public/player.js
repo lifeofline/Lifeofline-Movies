@@ -4,6 +4,7 @@
 // Saves where you stopped, reports starts / completions / errors (Admin → Numbers) and never leaves a spinner forever.
 import { $, esc, clock, loadScript, toast } from "./util.js";
 import { freeEpisode } from "./access.js";
+import { isPoetry, FALLBACK_BACK, repeatTarget, sherIndex, fmt } from "./shers.js";
 
 const HLS_JS = "https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.15/hls.min.js";
 const RATING_MS = 2800;
@@ -53,6 +54,7 @@ export async function openPlayer(opts) {
       ${listen ? `<audio id="pv" preload="auto" controlslist="nodownload"></audio>
       <div class="plisten"><div class="lart" style="${art}">${title.poster ? "" : `<span>${esc(title.title)}</span>`}</div>
         <div class="lnow"><span class="eyebrow">Listening</span><b id="lname">${esc(title.title)}</b><span id="lep" class="lep"></span>
+        <div class="lsher" id="lsher" hidden></div>
         <span class="lhint">You can lock your phone or open another app. It keeps playing${opts.episodes?.length > 1 ? " and moves on to the next episode by itself" : ""}.</span></div></div>`
       : `<video id="pv" playsinline webkit-playsinline preload="auto" x-webkit-airplay="deny" controlslist="nodownload noremoteplayback noplaybackrate" disablepictureinpicture disableremoteplayback></video>`}
       <div class="ppv" id="ppv" hidden></div>
@@ -72,7 +74,10 @@ export async function openPlayer(opts) {
           <div class="pbar" id="pbar" role="slider" aria-label="Seek" tabindex="0"><div class="ptrack"><i id="pbuf"></i><i id="pfill"></i><span class="cue" id="pcue" hidden></span></div><span class="pknob" id="pknob"></span></div>
           <span class="ptime" id="pleft">-0:00</span>
         </div>
-        <div class="pctl">
+        <div class="pctl pbtns">
+          <button class="pbtn psher" data-psher id="psherb" hidden aria-label="Repeat the last sher">↺ Sher</button>
+          <button class="pbtn ploop" data-ploop id="ploop" hidden aria-label="Repeat each sher">🔁 ×1</button>
+          <button class="pbtn plist" data-plist id="plist" hidden aria-label="List of shers">☰ Shers</button>
           <button class="pbtn ptog" data-pauto id="pauto" aria-pressed="${pref.autoplay}" hidden><span class="sw" aria-hidden="true"></span>Autoplay</button>
           ${listen ? `<label class="pqual"><span class="sr">Sleep timer</span><select id="psleep" aria-label="Sleep timer">${SLEEP.map(([v, l]) => `<option value="${v}">${v === "0" ? "Sleep timer" : "Sleep: " + l}</option>`).join("")}</select></label>` : ""}
           <span class="pspace"></span>
@@ -83,7 +88,7 @@ export async function openPlayer(opts) {
     </div>`;
   document.body.append(ov);
   document.body.classList.add("playing");
-  const P = current = { ...opts, ov, listen, vertical, video: $("#pv", ov), sleepAt: 0, sleepEp: false, hls: null, ep: null, res: null, midDone: false, phase: "load", saveT: 0, idleT: 0, destroyed: false };
+  const P = current = { ...opts, ov, listen, vertical, poetry: isPoetry(title) && !opts.trailer, shers: [], sherI: -1, loopN: opts.loopN || 1, loopLeft: 0, video: $("#pv", ov), sleepAt: 0, sleepEp: false, hls: null, ep: null, res: null, midDone: false, phase: "load", saveT: 0, idleT: 0, destroyed: false };
   if (!had) history.pushState({ player: 1 }, "");
   wire(P);
   await start(P, opts.epId, opts.trailer, opts.startAt, opts.skipIntro);
@@ -114,6 +119,10 @@ async function start(P, epId, trailer, startAt, skipIntro = false) {
   P.res = r; P.trailer = !!trailer;
   P.ep = trailer ? null : (P.episodes || []).find((x) => x.id === r.epId) || { id: r.epId, n: r.n, name: r.name };
   $("#pname", P.ov).textContent = trailer ? `${P.title.title} · ${P.direct ? "Animated poster teaser" : "Trailer"}` : P.title.kind === "movie" ? P.title.title : `${P.title.title} · Ep ${r.n}${P.title.demo ? " · Demo story card" : ""}`;
+  P.shers = !trailer && Array.isArray(P.ep?.shers) ? P.ep.shers.filter((x) => isFinite(x?.t)) : []; P.sherI = -1; P.loopLeft = 0;
+  $("#psherb", P.ov).hidden = !P.poetry || trailer; $("#ploop", P.ov).hidden = !P.shers.length; $("#plist", P.ov).hidden = !P.shers.length;
+  $("#ploop", P.ov).textContent = `🔁 ×${P.loopN}`; $("#ploop", P.ov).setAttribute("aria-pressed", P.loopN > 1);
+  showSher(P, -1);
   const nx = nextEp(P); $("#pnext", P.ov).hidden = !nx; $("#pauto", P.ov).hidden = !(P.episodes?.length > 1) || trailer;
   if (P.listen) { const le = $("#lep", P.ov); if (le) le.textContent = P.title.kind === "movie" ? "" : `Episode ${r.n}${r.name && !/^Episode \d+$/.test(r.name) ? " · " + r.name : ""}`; }
   if ("mediaSession" in navigator && window.MediaMetadata) {
@@ -254,6 +263,7 @@ function wire(P) {
     if (P.res?.ads && !P.trailer && d > MIDROLL_MIN_SEC) { cue.hidden = P.midDone; cue.style.left = "50%"; }
     if (P.res?.ads && !P.trailer && !P.midDone && d > MIDROLL_MIN_SEC && v.currentTime > d / 2 && P.phase === "play") { P.midDone = true; adBreak(P, "Mid-roll"); }
     if (Date.now() - P.saveT > 10e3) { P.saveT = Date.now(); save(P); posState(P); }
+    if (P.shers.length && P.phase === "play") sherTick(P);
     if (P.sleepAt && Date.now() >= P.sleepAt) { P.sleepAt = 0; v.pause(); const sl = $("#psleep", ov); if (sl) sl.value = "0"; toast("Sleep timer: paused", 4000); }
     if (!P.trailer && !P.completed && d > 60 && v.currentTime / d > 0.9) { P.completed = true; track(P, "complete"); }
   });
@@ -307,7 +317,7 @@ function wire(P) {
       if (!onPicture(e) || P.phase !== "play") return;
       const r = $("#pstage", ov).getBoundingClientRect(), side = e.clientX < r.left + r.width / 3 ? -1 : e.clientX > r.right - r.width / 3 ? 1 : 0;
       const now = Date.now();
-      if (side && now - lastTap < 320) { clearTimeout(tapT); lastTap = 0; skip(side * 10); if (!ov.classList.contains("idle")) wake(); return; }
+      if (side && now - lastTap < 320) { clearTimeout(tapT); lastTap = 0; if (side < 0 && P.poetry) repeatSher(P); else skip(side * 10); if (!ov.classList.contains("idle")) wake(); return; }
       lastTap = now;
       const toggle = () => { if (ov.classList.contains("idle")) wake(); else if (!v.paused) { clearTimeout(P.idleT); ov.classList.add("idle"); } };
       if (side) { clearTimeout(tapT); tapT = setTimeout(toggle, 260); } else toggle();
@@ -320,9 +330,14 @@ function wire(P) {
     if (b.dataset.seek) return skip(Number(b.dataset.seek));
     if (b.hasAttribute("data-pnext")) return goNext(P, nextEp(P));
     if (b.hasAttribute("data-pgo")) { clearInterval(P.countT); return goNext(P, nextEp(P)); }
+    if (b.hasAttribute("data-plclose")) return layer(P, "");
     if (b.hasAttribute("data-pstay")) { clearInterval(P.countT); return layer(P, `<div class="pcard"><span class="eyebrow">Autoplay stopped</span><div class="row"><button class="btn gold" data-pgo>Play the next episode</button><button class="btn ghost" data-pclose>Close</button></div></div>`); }
     if (b.hasAttribute("data-pauto")) { pref.autoplay = !pref.autoplay; b.setAttribute("aria-pressed", pref.autoplay); return toast(pref.autoplay ? "Autoplay on: the next episode starts by itself" : "Autoplay off", 2500); }
     if (b.hasAttribute("data-pmode")) return switchMode(P);
+    if (b.hasAttribute("data-psher")) return repeatSher(P);
+    if (b.hasAttribute("data-ploop")) { P.loopN = P.loopN >= 3 ? 1 : P.loopN + 1; P.loopLeft = P.loopN - 1; b.textContent = `🔁 ×${P.loopN}`; b.setAttribute("aria-pressed", P.loopN > 1); return toast(P.loopN > 1 ? `Each sher plays ${P.loopN} times` : "Each sher plays once", 2200); }
+    if (b.hasAttribute("data-plist")) return sherList(P);
+    if (b.dataset.pjump) { layer(P, ""); v.currentTime = Number(b.dataset.pjump); P.loopLeft = P.loopN - 1; if (v.paused) playSafe(P); return; }
     if (b.hasAttribute("data-pfs")) return toggleFullscreen(P);
     if (b.hasAttribute("data-pretry")) return start(P, P.ep?.id || P.epId, P.trailer, Math.floor(v.currentTime || 0));
     if (b.hasAttribute("data-preport")) {
@@ -358,6 +373,7 @@ function wire(P) {
     else if (P.vertical && e.key === "ArrowDown") { e.preventDefault(); goNext(P, nextEp(P)); }
     else if (P.vertical && e.key === "ArrowUp") { e.preventDefault(); goNext(P, prevEp(P)); }
     else if (e.key === "MediaTrackNext" || e.key === "n") goNext(P, nextEp(P));
+    else if ((e.key === "r" || e.key === "MediaTrackPrevious") && P.poetry) { e.preventDefault(); repeatSher(P); }
     else if (e.key === "f") toggleFullscreen(P);
   };
   const fsIcon = () => { const on = !!(document.fullscreenElement || document.webkitFullscreenElement); const fb = $("#pfsb", ov); if (fb) { fb.innerHTML = on ? ICON_FS_EXIT : ICON_FS; fb.setAttribute("aria-label", on ? "Exit full screen" : "Full screen"); } };
@@ -369,7 +385,7 @@ function wire(P) {
       ms.setActionHandler("play", () => playSafe(P)); ms.setActionHandler("pause", () => v.pause());
       ms.setActionHandler("seekbackward", () => skip(-10)); ms.setActionHandler("seekforward", () => skip(10));
       ms.setActionHandler("nexttrack", () => { const nx = nextEp(P); if (nx) goNext(P, nx); });
-      ms.setActionHandler("previoustrack", () => { if (v.currentTime > 10) { v.currentTime = 0; return; } const pv = prevEp(P); if (pv) goNext(P, pv); });
+      ms.setActionHandler("previoustrack", () => { if (P.poetry && P.phase === "play") return repeatSher(P); if (v.currentTime > 10) { v.currentTime = 0; return; } const pv = prevEp(P); if (pv) goNext(P, pv); });
       ms.setActionHandler("seekto", (d) => { if (v.duration && d.seekTime != null) v.currentTime = Math.min(v.duration - 1, d.seekTime); posState(P); });
     } catch { /* not every action exists everywhere */ }
   }
@@ -435,6 +451,39 @@ function switchMode(P) {
   if (P.trailer) return;
   const at = Math.floor(P.video.currentTime || 0);
   const opts = { api: P.api, title: P.title, episodes: P.episodes, epId: P.ep?.id || P.epId, trailer: false, startAt: at, ads: P.ads, direct: P.direct,
-    onNeedPlan: P.onNeedPlan, onNeedSignIn: P.onNeedSignIn, onNeedAge: P.onNeedAge, onClosed: P.onClosed, listen: !P.listen, skipIntro: true, midDone: P.midDone };
+    onNeedPlan: P.onNeedPlan, onNeedSignIn: P.onNeedSignIn, onNeedAge: P.onNeedAge, onClosed: P.onClosed, listen: !P.listen, skipIntro: true, midDone: P.midDone, loopN: P.loopN };
   openPlayer(opts).then(() => { if (current && current.listen) toast("Listening: lock your phone or switch apps, it keeps playing", 3500); });
+}
+
+// ---- Repeat the last sher -------------------------------------------------------------------------------
+// With sher timings: back to the start of the sher just heard (pressed again right away: one sher further back).
+// Without them yet (poetry titles): back 20 seconds.
+function repeatSher(P) {
+  const v = P.video; if (P.phase !== "play" || !v.duration) return;
+  const to = P.shers.length ? repeatTarget(P.shers, v.currentTime) : Math.max(0, v.currentTime - FALLBACK_BACK);
+  v.currentTime = Math.min(to, v.duration - 1); P.loopLeft = P.loopN - 1;
+  const fx = $("#pfxl", P.ov); if (fx) { const sp = fx.querySelector("span"); if (sp) sp.textContent = P.shers.length ? "Sher again" : `${FALLBACK_BACK} sec`; fx.classList.remove("on"); void fx.offsetWidth; fx.classList.add("on"); setTimeout(() => { if (sp) sp.textContent = "10 sec"; }, 700); }
+  if (v.paused) playSafe(P);
+  posState(P);
+}
+// Follows the sher being recited (Listen mode shows it under the poster) and loops it when "🔁 ×2 / ×3" is on.
+function sherTick(P) {
+  const v = P.video, now = v.currentTime, i = sherIndex(P.shers, now);
+  if (i !== P.sherI) { P.sherI = i; P.loopLeft = P.loopN - 1; showSher(P, i); }
+  if (i < 0 || P.loopLeft <= 0) return;
+  const sh = P.shers[i], nx = P.shers[i + 1];
+  const end = sh.e ? sh.e + 0.3 : nx ? nx.t - 0.6 : (v.duration || 0) - 0.5;
+  if (now >= end && (!nx || now < nx.t)) { P.loopLeft--; v.currentTime = sh.t; }
+}
+function showSher(P, i) {
+  const box = $("#lsher", P.ov); if (!box) return;
+  const sh = i >= 0 ? P.shers[i] : null;
+  box.hidden = !sh;
+  if (sh) box.innerHTML = `<p>${esc(sh.text).replace(/\n/g, "<br>")}</p>${sh.en ? `<small>${esc(sh.en).replace(/\n/g, "<br>")}</small>` : ""}<span class="lsn">Sher ${i + 1} of ${P.shers.length}</span>`;
+}
+function sherList(P) {
+  const cur = sherIndex(P.shers, P.video.currentTime);
+  layer(P, `<div class="pcard plistc"><div class="plbox"><span class="eyebrow">Shers in this ghazal</span>
+    <div class="shl">${P.shers.map((x, i) => `<button class="shr ${i === cur ? "on" : ""}" data-pjump="${x.t}"><span class="tm">${fmt(x.t)}</span><span class="tx">${esc(x.text || `Sher ${i + 1}`).replace(/\n/g, "<br>")}</span></button>`).join("")}</div>
+    <div class="row"><button class="btn ghost" data-plclose>Back to the player</button></div></div></div>`);
 }

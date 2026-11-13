@@ -4,6 +4,7 @@ import { $, esc, dur, posterStyle, toast, hues } from "./util.js";
 import { LANGS, KINDS, RATINGS } from "./access.js";
 import { withStarter } from "./starter-titles.js";
 import { GHALIB_ID, GHALIB_TITLE, GHALIB_EPISODES } from "./ghalib.js";
+import { parseTimings, isPoetry, fmt as sfmt } from "./shers.js";
 
 export async function mountAdmin(root, { api, reload }) {
   const A = { tab: "titles", titles: [], editing: null, eps: [], ads: [], busy: false };
@@ -217,8 +218,32 @@ export async function mountAdmin(root, { api, reload }) {
     ${isNew ? "" : episodesView()}`;
   }
 
+  // Sher timings: where each sher starts, for "↺ Sher", the sher shown while listening, and looping a sher.
+  function sherPanel(e) {
+    const prev = A.shDraft?.id === e.id ? A.shDraft.list : e.shers || [];
+    return `<div class="epsh" style="flex-basis:100%;display:grid;gap:8px;padding:10px;border-radius:10px;background:rgba(255,255,255,.04)">
+      <p class="small" style="margin:0">Add the caption file made with this video (.srt or .vtt, captions on the shers only), or paste lines like <code>0:42 first line / second line</code>, one sher per line. Nothing changes in the video.</p>
+      <input type="file" class="shfile" accept=".srt,.vtt,.txt,.json,text/plain" aria-label="Caption file" data-nav>
+      <textarea class="shtext" rows="4" placeholder="0:42 दिल-ए-नादाँ तुझे हुआ क्या है / आख़िर इस दर्द की दवा क्या है" aria-label="Sher times" data-nav></textarea>
+      <div class="row"><button class="btn sm gold" data-shcheck data-nav>Read the times</button>${A.shDraft?.id === e.id ? `<button class="btn sm gold" data-shsave data-nav>Save ${A.shDraft.list.length} shers</button>` : ""}${e.shers?.length ? `<button class="btn sm ghost danger" data-shdel data-nav>Remove timings</button>` : ""}<button class="btn sm ghost" data-epshers data-nav>Close</button></div>
+      ${prev.length ? `<div class="small" style="display:grid;gap:4px;max-height:220px;overflow:auto">${A.shDraft?.id === e.id ? "<b>Check before saving:</b>" : "<b>Saved:</b>"}${prev.map((x, i) => `<div><code>${sfmt(x.t)}${x.e ? "–" + sfmt(x.e) : ""}</code> Sher ${i + 1}: ${esc((x.text || "").replace(/\n/g, " / ")).slice(0, 140)}</div>`).join("")}</div>` : ""}
+    </div>`;
+  }
+  function sherBulk() {
+    const t = A.editing, byGhazal = A.eps.some((e) => e.ghazal);
+    const have = A.eps.filter((e) => e.shers?.length).length;
+    return `<div class="card" style="display:grid;gap:8px;margin-top:12px"><h3 style="margin:0">♪ Sher timings for many episodes at once</h3>
+      <p class="small" style="margin:0">${have} of ${A.eps.length} episodes have sher timings. Choose the caption files (.srt / .vtt) together; each file name must contain the ${byGhazal ? "episode number or the ghazal number from the production files" : "episode number"} (e.g. <code>ep05.srt</code>${byGhazal ? " or <code>ghazal-202.srt</code>" : ""}). You'll see the matches before anything is saved.</p>
+      <div class="row"><input type="file" id="shbulk" multiple accept=".srt,.vtt,.txt,.json,text/plain" data-nav>
+      ${byGhazal ? `<select id="shmatch" aria-label="Match files by" data-nav><option value="ghazal">Match by ghazal number</option><option value="n">Match by episode number</option></select>` : ""}
+      <button class="btn sm gold" data-shbulk data-nav>Read the files</button></div>
+      ${A.shBulk ? `<div class="small" style="display:grid;gap:3px;max-height:260px;overflow:auto">${A.shBulk.map((r) => `<div>${r.ep ? `✅ <b>Ep ${r.ep.n}</b> ${esc(r.ep.name || "")}: ${r.list.length} shers` : "❌"} <span class="small">(${esc(r.file)})</span>${r.err ? ` · ${esc(r.err)}` : ""}${r.ep?.shers?.length ? " · replaces the saved timings" : ""}</div>`).join("")}</div>
+        <div class="row"><button class="btn sm gold" data-shbulksave data-nav ${A.shBulk.some((r) => r.ep && !r.err) ? "" : "disabled"}>Save ${A.shBulk.filter((r) => r.ep && !r.err).length} episodes</button><button class="btn sm ghost" data-shbulkx data-nav>Cancel</button></div>` : ""}
+    </div>`;
+  }
   function episodesView() {
     const t = A.editing, movie = t.kind === "movie";
+    const shersOn = !movie && (isPoetry(t) || A.eps.some((e) => e.shers?.length));
     return `<section class="aeps"><h2>${movie ? "The film" : "Episodes"}</h2>
       ${A.eps.map((e) => `<div class="aep" data-epid="${esc(e.id)}">
         <span class="n">${String(e.n).padStart(2, "0")}</span>
@@ -226,13 +251,15 @@ export async function mountAdmin(root, { api, reload }) {
         <select class="epfree" aria-label="Who can watch" data-nav><option value="" ${e.free == null ? "selected" : ""}>Default rule</option><option value="free" ${e.free === true ? "selected" : ""}>Free for everyone</option><option value="prem" ${e.free === false ? "selected" : ""}>Premium only</option></select>
         <span class="small vstat">${e.videoUid ? (e.duration ? "Ready · " + dur(e.duration) : "Processing…") : "No video"}</span>
         <input type="file" class="epfile" accept="video/*" aria-label="${e.videoUid ? "New video for this episode" : "Video for this episode"}" data-nav><button class="btn sm ${e.videoUid ? "ghost" : "gold"}" data-epup data-nav>${e.videoUid ? "Replace video" : "Upload"}</button><div class="bar" id="epbar_${esc(e.id)}" hidden><i></i></div>
-        <button class="btn sm ghost" data-epsave data-nav>Save</button><button class="btn sm ghost" data-epcheck data-nav>Check video</button><button class="btn sm ghost danger" data-epdel data-nav>Delete</button>
+        <button class="btn sm ghost" data-epsave data-nav>Save</button><button class="btn sm ghost" data-epcheck data-nav>Check video</button>${shersOn ? `<button class="btn sm ${e.shers?.length ? "ghost" : "ghost"}" data-epshers data-nav>♪ Sher timings${e.shers?.length ? ` · ${e.shers.length}` : " · none"}</button>` : ""}<button class="btn sm ghost danger" data-epdel data-nav>Delete</button>
+        ${shersOn && A.shOpen === e.id ? sherPanel(e) : ""}
       </div>`).join("") || `<p class="small">No ${movie ? "video" : "episodes"} yet.</p>`}
       ${movie && A.eps.length ? "" : `<div class="aep new"><span class="n">${String((A.eps.at(-1)?.n || 0) + 1).padStart(2, "0")}</span>
         <input id="nep_name" placeholder="${movie ? "Full movie" : "Episode name (optional)"}" maxlength="80" data-nav>
         <input type="file" id="nep_file" accept="video/*" data-nav>
         <button class="btn sm gold" data-epadd data-nav>Upload ${movie ? "the film" : "episode"}</button>
         <div class="bar" id="nepbar" hidden><i></i></div></div>`}
+      ${shersOn && A.eps.length ? sherBulk() : ""}
       <p class="small">Videos go straight to Cloudflare Stream. Keep this page open until the bar is full; a dropped connection resumes when you upload the same file again. After upload, Cloudflare needs a few minutes to prepare the video: press “Check video” to see when it's ready.</p>
     </section>`;
   }
@@ -362,6 +389,50 @@ export async function mountAdmin(root, { api, reload }) {
       const fv = $(".epfree", row).value;
       await api.saveEpisode(A.editing.id, { id: row.dataset.epid, name: $(".epname", row).value.trim(), free: fv === "free" ? true : fv === "prem" ? false : null });
       return toast("Episode saved");
+    }
+    // ---- sher timings ----
+    if (row && b.hasAttribute("data-epshers")) { A.shOpen = A.shOpen === row.dataset.epid ? null : row.dataset.epid; A.shDraft = null; return render(); }
+    if (row && b.hasAttribute("data-shcheck")) {
+      const f = $(".shfile", row).files[0];
+      try {
+        const text = f ? await f.text() : $(".shtext", row).value;
+        A.shDraft = { id: row.dataset.epid, list: parseTimings(text, f?.name || "") };
+        const ep = A.eps.find((x) => x.id === row.dataset.epid);
+        const last = A.shDraft.list.at(-1)?.t || 0;
+        if (ep?.duration && last > ep.duration) toast(`The last sher is at ${sfmt(last)} but the video is ${sfmt(ep.duration)} long. Is this the right file?`, 6000);
+        return render();
+      } catch (er) { return toast(er.message, 6000); }
+    }
+    if (row && b.hasAttribute("data-shsave")) {
+      if (A.shDraft?.id !== row.dataset.epid) return;
+      b.disabled = true;
+      try { await api.saveEpisode(A.editing.id, { id: row.dataset.epid, shers: A.shDraft.list, shersAt: Date.now() }); A.shDraft = null; A.eps = await api.episodes(A.editing.id); toast("Sher timings saved"); return render(); }
+      catch (er) { b.disabled = false; return toast(er.message, 6000); }
+    }
+    if (row && b.hasAttribute("data-shdel")) {
+      if (b.dataset.sure !== "1") { b.dataset.sure = "1"; b.textContent = "Tap again to remove"; return; }
+      await api.saveEpisode(A.editing.id, { id: row.dataset.epid, shers: [], shersAt: Date.now() }); A.eps = await api.episodes(A.editing.id); toast("Timings removed"); return render();
+    }
+    if (b.hasAttribute("data-shbulkx")) { A.shBulk = null; return render(); }
+    if (b.hasAttribute("data-shbulk")) {
+      const files = [...($("#shbulk")?.files || [])]; if (!files.length) return toast("Choose the caption files first.");
+      const by = $("#shmatch")?.value || "n", used = new Set(), out = [];
+      for (const f of files) {
+        const nums = (f.name.replace(/\.[^.]+$/, "").match(/\d+/g) || []).map(Number);
+        const ep = A.eps.find((e) => nums.some((k) => by === "ghazal" ? String(e.ghazal || "") === String(k) : e.n === k));
+        const r = { file: f.name, ep: ep || null, list: [], err: "" };
+        if (!ep) r.err = `no episode with ${by === "ghazal" ? "ghazal" : "episode"} number ${nums.join(" or ") || "(no number in the name)"}`;
+        else if (used.has(ep.id)) r.err = "another file already matched this episode";
+        else { used.add(ep.id); try { r.list = await f.text().then((x) => parseTimings(x, f.name)); } catch (er) { r.err = er.message; } }
+        out.push(r);
+      }
+      A.shBulk = out.sort((a, b2) => (a.ep?.n || 999) - (b2.ep?.n || 999)); return render();
+    }
+    if (b.hasAttribute("data-shbulksave")) {
+      const ok = (A.shBulk || []).filter((r) => r.ep && !r.err); b.disabled = true; let n = 0;
+      try { for (const r of ok) { await api.saveEpisode(A.editing.id, { id: r.ep.id, shers: r.list, shersAt: Date.now() }); n++; b.textContent = `Saving… ${n}/${ok.length}`; } }
+      catch (er) { toast(er.message, 6000); }
+      A.shBulk = null; A.eps = await api.episodes(A.editing.id); toast(`Sher timings saved for ${n} episodes`); return render();
     }
     if (row && b.hasAttribute("data-epcheck")) {
       const ep = A.eps.find((x) => x.id === row.dataset.epid); if (!ep?.videoUid) return toast("No video uploaded for this one.");
