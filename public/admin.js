@@ -281,7 +281,8 @@ export async function mountAdmin(root, { api, reload }) {
     const max = Math.max(...P.items.map((x) => x.n));
     try {
       for (const x of P.items) {
-        const data = { n: x.n, name: x.name || `Episode ${x.n}`, chapter: x.chapter ?? null, chapterName: x.chapterName || "", ghazal: x.ghazal || "", key: x.key || "" };
+        const data = { n: x.n, name: x.name || `Episode ${x.n}`, chapter: x.chapter ?? null, chapterName: x.chapterName || "", key: x.key || "" };
+        if (x.ghazal) data.ghazal = x.ghazal;
         if (x.desc != null) data.desc = x.desc;
         if (x.shers) { data.shers = x.shers; data.shersAt = Date.now(); }
         await api.saveEpisode(A.editing.id, x.reuse ? { id: x.reuse.id, ...data } : { ...data, videoUid: "", duration: 0 });
