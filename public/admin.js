@@ -243,6 +243,7 @@ export async function mountAdmin(root, { api, reload }) {
   }
   // ---- Arrange many episodes from a plan file (order, names, chapters, sher timings) ----
   // Plan JSON: { "episodes": [ { "n": 1, "name": "…", "chapter": 1, "chapterName": "Agra to Delhi", "ghazal": "002",
+  //   "key": "L001" (optional: stable id; a plan applied again updates the episode with the same key),
   //   "from": 37 (optional: reuse the existing episode now numbered 37, keeping its video, timings and viewers' progress),
   //   "shers": [ {"t": 26.2, "e": 32.4, "text": "…"} ] (optional) } ], "deleteOthers": false }
   function planCard() {
@@ -265,6 +266,7 @@ export async function mountAdmin(root, { api, reload }) {
       const n = Number(x.n); if (!n) return toast("Every episode in the plan needs a number (n).");
       let reuse = null;
       if (x.id) reuse = A.eps.find((e) => e.id === x.id) || null;
+      else if (x.key && A.eps.some((e) => e.key === x.key)) reuse = A.eps.find((e) => e.key === x.key);
       else if (x.from != null) reuse = A.eps.find((e) => e.n === Number(x.from)) || null;
       else reuse = A.eps.find((e) => e.ghazal && x.ghazal && String(e.ghazal) === String(x.ghazal) && !used.has(e.id)) || null;
       if (reuse && used.has(reuse.id)) return toast(`Two plan entries point at the same existing episode (${reuse.n}).`);
@@ -279,7 +281,7 @@ export async function mountAdmin(root, { api, reload }) {
     const max = Math.max(...P.items.map((x) => x.n));
     try {
       for (const x of P.items) {
-        const data = { n: x.n, name: x.name || `Episode ${x.n}`, chapter: x.chapter ?? null, chapterName: x.chapterName || "", ghazal: x.ghazal || "" };
+        const data = { n: x.n, name: x.name || `Episode ${x.n}`, chapter: x.chapter ?? null, chapterName: x.chapterName || "", ghazal: x.ghazal || "", key: x.key || "" };
         if (x.desc != null) data.desc = x.desc;
         if (x.shers) { data.shers = x.shers; data.shersAt = Date.now(); }
         await api.saveEpisode(A.editing.id, x.reuse ? { id: x.reuse.id, ...data } : { ...data, videoUid: "", duration: 0 });
