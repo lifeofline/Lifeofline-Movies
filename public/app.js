@@ -417,10 +417,10 @@ async function vTitle(id) {
       ${note ? `<p class="small">${esc(note)}${locks ? ` <a href="#plans">See the plan</a>` : ""}</p>` : ""}
       ${soon && S.admin ? `<p class="small">Admin: ${concept ? "untick “Concept showcase” and add a release date when this becomes a real production. " : ""}Upload the film in <a href="#admin">Admin</a>, then untick “Coming soon”.</p>` : ""}
       <dl class="facts">${facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>
-      ${t.kind !== "movie" && eps.length ? `<h3>Episodes</h3><div class="eps">${eps.map((e) => {
+      ${t.kind !== "movie" && eps.length ? `<h3>Episodes</h3>${chapterChips(eps, first)}<div class="eps">${eps.map((e) => {
         const ep = S.progress[id]?.epId === e.id ? S.progress[id] : null;
         const done = ep && ep.dur && ep.pos / ep.dur > 0.9;
-        return `<button class="ep" data-play="${esc(t.id)}" data-ep="${esc(e.id)}" data-nav>
+        return `<button class="ep" data-play="${esc(t.id)}" data-ep="${esc(e.id)}"${e.chapter ? ` data-ch="${esc(e.chapter)}"${String(e.chapter) !== String(chapterOf(eps, first)) ? " hidden" : ""}` : ""} data-nav>
           <span class="n">${String(e.n).padStart(2, "0")}</span>
           <span class="thumb" style="${e.thumb ? `background:#000 url('${String(e.thumb).replace(/'/g, "%27")}') center/cover` : posterStyle(t)}"></span>
           <span class="info"><b>${esc(e.name || "Episode " + e.n)}</b>${e.desc ? `<em>${esc(e.desc)}</em>` : ""}<span>${esc(dur(e.duration))}${done ? " · watched" : ep ? " · watching" : ""}</span></span>
@@ -429,6 +429,24 @@ async function vTitle(id) {
     </div></div>
     ${like.length ? `<section class="rail"><div class="rail-h"><h2>More like this</h2></div><div class="grid">${like.map((x) => tile(x, "tall")).join("")}</div></section>` : ""}`;
 }
+
+// Chapters (folders) inside a series: episodes carry `chapter` (number) and `chapterName`.
+// The title page shows one chip per chapter and lists that chapter's episodes; series without chapters look as before.
+function chapterOf(eps, cur) { return cur?.chapter || eps.find((e) => e.chapter)?.chapter || ""; }
+function chapterChips(eps, cur) {
+  const chs = [];
+  for (const e of eps) if (e.chapter && !chs.some((c) => String(c.n) === String(e.chapter))) chs.push({ n: e.chapter, name: e.chapterName || `Chapter ${e.chapter}`, count: 0 });
+  if (chs.length < 2) return "";
+  for (const e of eps) { const c = chs.find((c) => String(c.n) === String(e.chapter)); if (c) c.count++; }
+  const on = String(chapterOf(eps, cur));
+  return `<div class="chips chapters" role="tablist" aria-label="Chapters">${chs.map((c) => `<button class="chip${String(c.n) === on ? " on" : ""}" role="tab" aria-selected="${String(c.n) === on}" data-chap="${esc(c.n)}" data-nav>${esc(c.n)}. ${esc(c.name)} <span class="small">· ${c.count}</span></button>`).join("")}</div>`;
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-chap]"); if (!b) return;
+  const box = b.closest(".dbody") || document;
+  box.querySelectorAll("[data-chap]").forEach((x) => { const on = x === b; x.classList.toggle("on", on); x.setAttribute("aria-selected", on); });
+  box.querySelectorAll(".eps .ep[data-ch]").forEach((x) => { x.hidden = x.dataset.ch !== b.dataset.chap; });
+});
 
 // Plain answers to what people ask before paying. `limit` shows the first few (Home); Plans shows them all.
 function faqHtml(ready, limit = 99) {

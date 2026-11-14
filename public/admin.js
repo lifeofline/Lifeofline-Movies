@@ -241,12 +241,119 @@ export async function mountAdmin(root, { api, reload }) {
         <div class="row"><button class="btn sm gold" data-shbulksave data-nav ${A.shBulk.some((r) => r.ep && !r.err) ? "" : "disabled"}>Save ${A.shBulk.filter((r) => r.ep && !r.err).length} episodes</button><button class="btn sm ghost" data-shbulkx data-nav>Cancel</button></div>` : ""}
     </div>`;
   }
+  // ---- Arrange many episodes from a plan file (order, names, chapters, sher timings) ----
+  // Plan JSON: { "episodes": [ { "n": 1, "name": "…", "chapter": 1, "chapterName": "Agra to Delhi", "ghazal": "002",
+  //   "from": 37 (optional: reuse the existing episode now numbered 37, keeping its video, timings and viewers' progress),
+  //   "shers": [ {"t": 26.2, "e": 32.4, "text": "…"} ] (optional) } ], "deleteOthers": false }
+  function planCard() {
+    const P = A.plan;
+    return `<div class="card" style="display:grid;gap:8px;margin-top:12px"><h3 style="margin:0">☰ Arrange episodes from a plan</h3>
+      <p class="small" style="margin:0">Choose a plan file (.json) with every episode's number, name and chapter. Existing episodes are renumbered in place (videos, sher timings and viewers' progress stay); new numbers are added without a video. You'll see the changes before anything is saved.</p>
+      <div class="row"><input type="file" id="planfile" accept=".json,application/json" data-nav><button class="btn sm gold" data-planread data-nav>Read the plan</button></div>
+      ${P ? `<div class="small" id="planlist" style="display:grid;gap:3px;max-height:280px;overflow:auto">
+          <div><b>${P.items.length} episodes in ${new Set(P.items.map((x) => x.chapter)).size} chapters</b> · ${P.items.filter((x) => x.reuse).length} reuse an uploaded episode · ${P.items.filter((x) => !x.reuse).length} new${P.drop.length ? ` · ${P.drop.length} existing not in the plan (${P.deleteOthers ? "will be deleted" : "kept, moved after the plan"})` : ""}</div>
+          ${P.items.map((x) => `<div>${x.reuse ? "↻" : "＋"} <b>${x.n}</b> Ch ${esc(x.chapter || "")} · ${esc(x.name)}${x.reuse ? ` <span class="small">(was ${x.reuse.n}${x.reuse.videoUid ? ", has video" : ""})</span>` : ""}${x.shers?.length ? ` · ♪ ${x.shers.length}` : ""}</div>`).join("")}</div>
+        <div class="row"><button class="btn sm gold" data-plansave data-nav>Apply the plan</button><button class="btn sm ghost" data-planx data-nav>Cancel</button></div>` : ""}
+    </div>`;
+  }
+  async function planRead() {
+    const f = $("#planfile")?.files?.[0]; if (!f) return toast("Choose the plan file first.");
+    let j; try { j = JSON.parse(await f.text()); } catch { return toast("That isn't a valid plan file (JSON)."); }
+    const list = Array.isArray(j) ? j : j.episodes; if (!Array.isArray(list) || !list.length) return toast("The plan has no episodes.");
+    const used = new Set(), items = [];
+    for (const x of list) {
+      const n = Number(x.n); if (!n) return toast("Every episode in the plan needs a number (n).");
+      let reuse = null;
+      if (x.id) reuse = A.eps.find((e) => e.id === x.id) || null;
+      else if (x.from != null) reuse = A.eps.find((e) => e.n === Number(x.from)) || null;
+      else reuse = A.eps.find((e) => e.ghazal && x.ghazal && String(e.ghazal) === String(x.ghazal) && !used.has(e.id)) || null;
+      if (reuse && used.has(reuse.id)) return toast(`Two plan entries point at the same existing episode (${reuse.n}).`);
+      if (reuse) used.add(reuse.id);
+      items.push({ ...x, n, reuse });
+    }
+    A.plan = { items: items.sort((a, b) => a.n - b.n), drop: A.eps.filter((e) => !used.has(e.id)), deleteOthers: !!j.deleteOthers };
+    render();
+  }
+  async function planSave(b) {
+    const P = A.plan; if (!P) return; b.disabled = true; let k = 0;
+    const max = Math.max(...P.items.map((x) => x.n));
+    try {
+      for (const x of P.items) {
+        const data = { n: x.n, name: x.name || `Episode ${x.n}`, chapter: x.chapter ?? null, chapterName: x.chapterName || "", ghazal: x.ghazal || "" };
+        if (x.desc != null) data.desc = x.desc;
+        if (x.shers) { data.shers = x.shers; data.shersAt = Date.now(); }
+        await api.saveEpisode(A.editing.id, x.reuse ? { id: x.reuse.id, ...data } : { ...data, videoUid: "", duration: 0 });
+        k++; b.textContent = `Saving… ${k}/${P.items.length}`;
+      }
+      let extra = max;
+      for (const e of P.drop) { if (P.deleteOthers) await api.deleteEpisode(A.editing.id, e.id); else await api.saveEpisode(A.editing.id, { id: e.id, n: ++extra }); }
+      toast(`Plan applied: ${k} episodes`);
+    } catch (er) { toast(er.message, 6000); }
+    A.plan = null; A.eps = await api.episodes(A.editing.id); render();
+  }
+
+  // ---- Upload videos that arrive in pieces ----
+  // Files named like "E123.p03of10.bin" (pieces of one video, any order). When every piece of an episode is here,
+  // they're joined back into the original MP4, uploaded to Cloudflare and attached to the episode with that number.
+  function partsCard() {
+    return `<div class="card" style="display:grid;gap:8px;margin-top:12px"><h3 style="margin:0">⇪ Upload videos in pieces</h3>
+      <p class="small" style="margin:0">For big batches: choose the pieces of one or more videos (names like <code>E123.p01of10.bin</code>). Each video is joined, uploaded and attached to episode 123 as soon as all its pieces are in. Keep this page open.</p>
+      <input type="file" id="partsin" multiple data-nav>
+      <div class="small" id="partslog" style="display:grid;gap:2px;max-height:220px;overflow:auto">${(A.partsLog || []).slice(-40).map((l) => `<div>${esc(l)}</div>`).join("")}</div>
+    </div>`;
+  }
+  const PARTS = (A.parts = A.parts || {});
+  const partsQueue = [];
+  let partsBusy = false;
+  function plog(m) { (A.partsLog = A.partsLog || []).push(m); const el = $("#partslog"); if (el) { const d = document.createElement("div"); d.textContent = m; el.appendChild(d); el.scrollTop = el.scrollHeight; } }
+  async function partsAdd(files) {
+    for (const f of files) {
+      const m = f.name.match(/^E(\d+)\.p(\d+)of(\d+)\.bin$/i); if (!m) { plog(`✗ ${f.name}: name not understood`); continue; }
+      const n = Number(m[1]), i = Number(m[2]), of = Number(m[3]);
+      const P = (PARTS[n] = PARTS[n] || { of, got: {}, size: 0 });
+      if (!P.got[i]) { P.got[i] = f; P.size += f.size; }
+      const have = Object.keys(P.got).length;
+      plog(`· E${n}: piece ${i}/${of} (${have}/${of})`);
+      if (have === of && !P.queued) { P.queued = true; partsQueue.push(n); }
+    }
+    partsRun();
+  }
+  async function partsRun() {
+    if (partsBusy) return; partsBusy = true;
+    try {
+      while (partsQueue.length) {
+        const n = partsQueue.shift(), P = PARTS[n];
+        const ep = A.eps.find((e) => e.n === n);
+        if (!ep) { plog(`✗ E${n}: no episode ${n} in this title. Apply the plan first.`); delete PARTS[n]; continue; }
+        const blobs = []; for (let i = 1; i <= P.of; i++) blobs.push(P.got[i]);
+        const file = new File(blobs, `E${n}.mp4`, { type: "video/mp4" });
+        plog(`⇪ E${n}: uploading ${(file.size / 1048576).toFixed(1)} MB…`);
+        A.busy = true;
+        try {
+          let last = -10; const uid = await api.uploadVideo(file, (p) => { if (p - last >= 25) { last = p; plog(`  E${n}: ${p}%`); } });
+          await api.saveEpisode(A.editing.id, { id: ep.id, videoUid: uid, duration: 0, previewUid: "", previewSec: 0, protectedAt: 0 });
+          ep.videoUid = uid; plog(`✓ E${n}: uploaded (${uid})`);
+        } catch (er) { plog(`✗ E${n}: ${er.message}`); P.queued = false; continue; } finally { A.busy = false; }
+        delete PARTS[n];
+      }
+    } finally { partsBusy = false; }
+  }
+  // Fill in durations for every episode whose video Cloudflare has finished preparing.
+  async function checkAll(b) {
+    const todo = A.eps.filter((e) => e.videoUid && !e.duration); let k = 0, ready = 0; b.disabled = true;
+    for (const e of todo) {
+      try { const s = await api.videoStatus(e.videoUid); if (s.ready) { await api.saveEpisode(A.editing.id, { id: e.id, duration: s.duration || 1 }); ready++; } } catch {}
+      b.textContent = `Checking… ${++k}/${todo.length}`;
+    }
+    toast(`${ready} of ${todo.length} videos ready`); A.eps = await api.episodes(A.editing.id); render();
+  }
+
   function episodesView() {
     const t = A.editing, movie = t.kind === "movie";
     const shersOn = !movie && (isPoetry(t) || A.eps.some((e) => e.shers?.length));
     return `<section class="aeps"><h2>${movie ? "The film" : "Episodes"}</h2>
       ${A.eps.map((e) => `<div class="aep" data-epid="${esc(e.id)}">
-        <span class="n">${String(e.n).padStart(2, "0")}</span>
+        <span class="n">${String(e.n).padStart(2, "0")}</span>${e.chapter ? `<span class="small" title="${esc(e.chapterName || "")}">Ch ${esc(e.chapter)}</span>` : ""}
         <input class="epname" value="${esc(e.name || "")}" aria-label="Episode name" maxlength="80" data-nav>
         <select class="epfree" aria-label="Who can watch" data-nav><option value="" ${e.free == null ? "selected" : ""}>Default rule</option><option value="free" ${e.free === true ? "selected" : ""}>Free for everyone</option><option value="prem" ${e.free === false ? "selected" : ""}>Premium only</option></select>
         <span class="small vstat">${e.videoUid ? (e.duration ? "Ready · " + dur(e.duration) : "Processing…") : "No video"}</span>
@@ -260,6 +367,8 @@ export async function mountAdmin(root, { api, reload }) {
         <button class="btn sm gold" data-epadd data-nav>Upload ${movie ? "the film" : "episode"}</button>
         <div class="bar" id="nepbar" hidden><i></i></div></div>`}
       ${shersOn && A.eps.length ? sherBulk() : ""}
+      ${movie ? "" : planCard() + partsCard()}
+      ${A.eps.some((e) => e.videoUid && !e.duration) ? `<div class="row" style="margin-top:8px"><button class="btn sm ghost" data-checkall data-nav>Check all processing videos (${A.eps.filter((e) => e.videoUid && !e.duration).length})</button></div>` : ""}
       <p class="small">Videos go straight to Cloudflare Stream. Keep this page open until the bar is full; a dropped connection resumes when you upload the same file again. After upload, Cloudflare needs a few minutes to prepare the video: press “Check video” to see when it's ready.</p>
     </section>`;
   }
@@ -413,6 +522,10 @@ export async function mountAdmin(root, { api, reload }) {
       if (b.dataset.sure !== "1") { b.dataset.sure = "1"; b.textContent = "Tap again to remove"; return; }
       await api.saveEpisode(A.editing.id, { id: row.dataset.epid, shers: [], shersAt: Date.now() }); A.eps = await api.episodes(A.editing.id); toast("Timings removed"); return render();
     }
+    if (b.hasAttribute("data-planread")) return planRead();
+    if (b.hasAttribute("data-planx")) { A.plan = null; return render(); }
+    if (b.hasAttribute("data-plansave")) return planSave(b);
+    if (b.hasAttribute("data-checkall")) return checkAll(b);
     if (b.hasAttribute("data-shbulkx")) { A.shBulk = null; return render(); }
     if (b.hasAttribute("data-shbulk")) {
       const files = [...($("#shbulk")?.files || [])]; if (!files.length) return toast("Choose the caption files first.");
@@ -452,6 +565,7 @@ export async function mountAdmin(root, { api, reload }) {
   });
 
   root.addEventListener("change", async (e) => {
+    if (e.target.id === "partsin" && e.target.files.length) { const fs = [...e.target.files]; e.target.value = ""; return partsAdd(fs); }
     if (e.target.id === "f_banner" && e.target.files[0]) {
       try { toast("Uploading banner…"); A.editing.banner = await api.uploadImage(e.target.files[0], { wide: true }); toast("Banner ready. Save to keep it."); }
       catch (er) { toast(er.message, 4000); }

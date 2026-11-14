@@ -181,6 +181,9 @@ body.titlepg .detail { padding-top: 8px; }
 .descr { margin: 0; font-size: 13px; color: var(--muted); }
 .dbody h3 { margin-top: 8px; }
 .eps { display: flex; flex-direction: column; gap: 8px; }
+.eps .ep[hidden] { display: none; }
+.chips.chapters { padding: 4px 2px 12px; }
+.chips.chapters .chip .small { opacity: .7; font-weight: 500; }
 .ep { display: flex; align-items: center; gap: 14px; padding: 10px; border-radius: 10px; background: var(--ink-2); border: 1px solid transparent; text-align: left; width: 100%; }
 .ep:hover, .ep:focus-visible { border-color: var(--line); }
 .ep .n { font-family: var(--f-mono); color: var(--muted); width: 28px; font-size: 13px; }
