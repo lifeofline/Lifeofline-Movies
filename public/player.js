@@ -66,7 +66,7 @@ export async function openPlayer(opts) {
       <div class="pseekfx l" id="pfxl" aria-hidden="true">${ICON_BACK}<span>10 sec</span></div><div class="pseekfx r" id="pfxr" aria-hidden="true">${ICON_FWD}<span>10 sec</span></div>
       <div class="plyr" id="plyr"></div>
       <div class="pvst" id="pvst" hidden aria-live="polite"><i></i><span id="pvtx">Say “phir se”, “agla” or “ruko”</span></div>
-      <div class="ptop"><button class="pic" data-pclose aria-label="Close">${ICON_X}</button><div class="pttl"><b id="pname">${esc(title.title)}</b><span class="rating" id="prate">${esc(title.rating || "U")}</span></div>
+      <div class="ptop"><button class="pic" data-pclose aria-label="Close">${ICON_X}</button><div class="pttl"><span class="pt2"><b id="pname">${esc(title.title)}</b><span class="psubrow"><small id="psub" hidden></small><span class="rating" id="prate">${esc(title.rating || "U")}</span></span></span></div>
         ${opts.trailer ? "" : `<button class="pbtn pmode" data-pmode aria-label="${listen ? "Watch the video" : "Listen with the screen off"}">${listen ? ICON_TV + "<span>Watch the video</span>" : ICON_HEAD + "<span>Listen</span><small>screen can be off</small>"}</button>`}
         <button class="pbtn pnext" data-pnext id="pnext" hidden aria-label="Next episode">Next<span class="nx-long"> episode</span> ${ICON_NEXT}</button></div>
       <div class="pmid" id="pmid">
@@ -133,7 +133,11 @@ async function start(P, epId, trailer, startAt, skipIntro = false) {
   if (P.destroyed) return;
   P.res = r; P.trailer = !!trailer;
   P.ep = trailer ? null : (P.episodes || []).find((x) => x.id === r.epId) || { id: r.epId, n: r.n, name: r.name };
-  $("#pname", P.ov).textContent = trailer ? `${P.title.title} · ${P.direct ? "Animated poster teaser" : "Trailer"}` : P.title.kind === "movie" ? P.title.title : `${P.title.title} · Ep ${r.n}${P.title.demo ? " · Demo story card" : ""}`;
+  // Episode name first (e.g. the ghazal), with the series and episode number underneath.
+  const rawName = String(r.name || P.ep?.name || "").trim();
+  const epName = !trailer && P.title.kind !== "movie" && rawName && !/^(Episode|Ep\.?)\s*\d+$/i.test(rawName) ? rawName : "";
+  $("#pname", P.ov).textContent = trailer ? `${P.title.title} · ${P.direct ? "Animated poster teaser" : "Trailer"}` : P.title.kind === "movie" ? P.title.title : epName || `${P.title.title} · Ep ${r.n}${P.title.demo ? " · Demo story card" : ""}`;
+  { const sub = $("#psub", P.ov); sub.hidden = !epName; sub.textContent = epName ? `${P.title.title} · Ep ${r.n}` : ""; }
   P.shers = !trailer && Array.isArray(P.ep?.shers) ? P.ep.shers.filter((x) => isFinite(x?.t)) : []; P.sherI = -1; P.loopLeft = 0;
   // Exact "↺ Sher" only when this episode has its sher timings; until then the button says what it really does.
   { const sb = $("#psherb", P.ov); sb.hidden = !P.poetry || trailer; sb.textContent = P.shers.length ? "↺ Sher" : `↺ ${FALLBACK_BACK}s`; sb.setAttribute("aria-label", P.shers.length ? "Repeat the last sher" : `Back ${FALLBACK_BACK} seconds`); } $("#ploop", P.ov).hidden = !P.shers.length; $("#plist", P.ov).hidden = !P.shers.length;
