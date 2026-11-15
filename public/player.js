@@ -67,7 +67,7 @@ export async function openPlayer(opts) {
       <div class="plyr" id="plyr"></div>
       <div class="pvst" id="pvst" hidden aria-live="polite"><i></i><span id="pvtx">Say “phir se”, “agla” or “ruko”</span></div>
       <div class="ptop"><button class="pic" data-pclose aria-label="Close">${ICON_X}</button><div class="pttl"><b id="pname">${esc(title.title)}</b><span class="rating" id="prate">${esc(title.rating || "U")}</span></div>
-        ${opts.trailer ? "" : `<button class="pbtn pmode" data-pmode aria-label="${listen ? "Watch the video" : "Listen with the screen off"}">${listen ? ICON_TV + "<span>Watch</span>" : ICON_HEAD + "<span>Listen</span>"}</button>`}
+        ${opts.trailer ? "" : `<button class="pbtn pmode" data-pmode aria-label="${listen ? "Watch the video" : "Listen with the screen off"}">${listen ? ICON_TV + "<span>Watch the video</span>" : ICON_HEAD + "<span>Listen</span><small>screen can be off</small>"}</button>`}
         <button class="pbtn pnext" data-pnext id="pnext" hidden aria-label="Next episode">Next<span class="nx-long"> episode</span> ${ICON_NEXT}</button></div>
       <div class="pmid" id="pmid">
         <button class="pic big" data-seek="-10" aria-label="Back 10 seconds">${ICON_BACK}</button>
