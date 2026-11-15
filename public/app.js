@@ -9,7 +9,7 @@ import { vPitch, slotRail } from "./pitch.js";
 import { LANGS, KINDS, KIDS_OK, freeEpisode } from "./access.js";
 import { openPlayer } from "./player.js";
 import { isPoetry, fmt as tfmt } from "./shers.js";
-import { searchShers, soundKey, listenOnce, canListen } from "./sher-search.js";
+import { searchShers, soundKey, listenOnce, canListen, loadIndex as loadSherIndex } from "./sher-search.js";
 import { createHelp } from "./help-widget.js";
 import { initInstall, installCard, markEngaged, STORE_APP } from "./install.js";
 
@@ -587,7 +587,7 @@ async function route() {
   if (!S.keepScroll) window.scrollTo(0, 0);
   S.keepScroll = false;
   if (S.tv) setTimeout(() => { const f = $("#app [data-nav]"); if (f && !document.activeElement?.closest("#app")) f.focus({ preventScroll: true }); }, 30);
-  if (r === "search") { const q = $("#q"); q.focus(); q.setSelectionRange(q.value.length, q.value.length); fillShers(S.q || ""); }
+  if (r === "search") { const q = $("#q"); q.focus(); q.setSelectionRange(q.value.length, q.value.length); loadSherIndex().catch(() => {}); fillShers(S.q || ""); }
 }
 window.addEventListener("hashchange", () => { if (history.state?.player) return; route(); });
 
@@ -926,10 +926,13 @@ async function fillShers(q) {
   const qq = String(q || "").trim();
   if (qq.length < 3) { box.innerHTML = ""; return; }
   const my = (S.sherQ = qq);
+  // show "searching" straight away if the answer takes more than a moment (first search loads the sher list)
+  const spinT = setTimeout(() => { if (S.sherQ === my && $("#shers")) $("#shers").innerHTML = `<div class="shload" role="status"><span class="spin" aria-hidden="true"></span>Searching 2,047 shers of Ghalib for “${esc(qq)}”…</div>`; }, 120);
   let hits;
-  try { hits = await searchShers(qq, 6); } catch { box.innerHTML = ""; return; }
+  try { hits = await searchShers(qq, 6); } catch { clearTimeout(spinT); box.innerHTML = ""; return; }
+  clearTimeout(spinT);
   if (S.sherQ !== my || !$("#shers")) return;
-  if (!hits.length) { box.innerHTML = ""; return; }
+  if (!hits.length) { const b2 = $("#shers"); if (b2) b2.innerHTML = qq.split(/\s+/).length >= 2 ? `<p class="shnone">No sher matches “${esc(qq)}”. Try a few more words, or another part of the line.</p>` : ""; return; }
   const none = $("#qnone"); if (none) none.hidden = true;
   const eps = await ghalibEpisodes();
   if (S.sherQ !== my) return;
@@ -948,17 +951,46 @@ async function fillShers(q) {
   }).join("");
 }
 document.addEventListener("click", (e) => {
-  const t = e.target.closest("[data-shplay], [data-qmic], [data-qtry]"); if (!t) return;
+  const t = e.target.closest("[data-shplay], [data-qmic], [data-qtry], [data-vsdone], [data-vsx]"); if (!t) return;
+  if (t.hasAttribute("data-vsdone")) { S.qrec?.done(); return; }
+  if (t.hasAttribute("data-vsx")) { S.qrec?.stop(); closeVoiceSheet(); return; }
   if (t.dataset.shplay) { const at = t.dataset.at === "" ? null : Math.max(0, Number(t.dataset.at)); play(GHALIB, t.dataset.shplay, false, false, at); return; }
   if (t.dataset.qtry) { S.q = t.dataset.qtry; route(); return; }
-  if (t.hasAttribute("data-qmic")) {
-    if (S.qrec) { S.qrec.stop(); return; }
-    const q = $("#q"); t.classList.add("on"); q.placeholder = "Listening… say a line of the sher";
-    S.qrec = listenOnce({
-      onText: (txt) => { const q2 = $("#q"); if (q2) q2.value = txt; },
-      onEnd: (final) => { S.qrec = null; const b = $("#qmic"); b?.classList.remove("on"); const q2 = $("#q"); if (q2) q2.placeholder = "Titles, actors, or any line of a sher"; const v = (final || q2?.value || "").trim(); if (v) { S.q = v; route(); } },
-      onError: (err) => { S.qrec = null; $("#qmic")?.classList.remove("on"); toast(err === "not-allowed" || err === "service-not-allowed" ? "Allow the microphone for this site to search by voice." : err === "no-speech" ? "Didn't hear anything. Tap the mic and say a line." : "Voice search isn't working here. Type the line instead.", 4000); },
-    });
-    if (!S.qrec) { t.classList.remove("on"); toast("Voice search isn't available in this browser. Use your keyboard's mic instead.", 4000); }
-  }
+  if (t.hasAttribute("data-qmic")) voiceSearch();
 });
+
+// The listening sheet: shows that the mic is on, the words as they're heard, then "searching", then the results.
+function closeVoiceSheet() { $("#vsheet")?.remove(); S.qrec = null; }
+function voiceSearch() {
+  closeVoiceSheet();
+  loadSherIndex().catch(() => {});
+  const el = document.createElement("div");
+  el.id = "vsheet"; el.className = "vsheet"; el.setAttribute("role", "dialog"); el.setAttribute("aria-label", "Search by voice");
+  el.innerHTML = `<div class="vsbox">
+      <div class="vsmic" id="vsmic"><svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></div>
+      <p class="vsstate" id="vsstate">Starting the microphone…</p>
+      <p class="vstext" id="vstext" lang="hi" aria-live="polite"></p>
+      <p class="vstip">Say any line of a sher, in Hindi or Urdu. e.g. “dil-e-nadan tujhe hua kya hai”</p>
+      <div class="row"><button class="btn gold" data-vsdone>Search now</button><button class="btn ghost" data-vsx>Cancel</button></div></div>`;
+  document.body.appendChild(el);
+  const st = (m) => { const x = $("#vsstate"); if (x) x.textContent = m; };
+  S.qrec = listenOnce({
+    onStart: () => { st("Listening… say the line"); $("#vsmic")?.classList.add("on"); },
+    onText: (txt) => { const x = $("#vstext"); if (x) x.textContent = "“" + txt + "”"; st("Heard you. Keep going, or pause to search"); },
+    onEnd: async (final) => {
+      if (!$("#vsheet")) return;
+      $("#vsmic")?.classList.remove("on");
+      if (!final) { st("Didn't catch that. Tap the mic and try again, a little louder."); setTimeout(closeVoiceSheet, 2200); return; }
+      st("Searching the ghazals…"); $("#vsmic")?.classList.add("busy");
+      S.q = final;
+      if ((location.hash || "") !== "#search") location.hash = "#search";
+      await route(); await fillShers(final);
+      closeVoiceSheet();
+      const n = document.querySelectorAll(".sherhit").length;
+      toast(n ? `Found ${n === 1 ? "the sher" : n + " shers"} for “${final}”` : `No sher found for “${final}”. Try another line.`, 3500);
+      $("#shers")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    },
+    onError: (err) => { st(err === "not-allowed" || err === "service-not-allowed" ? "Microphone is blocked. Allow it for this site in your browser settings, or type the line instead." : err === "no-speech" ? "Didn't hear anything. Tap the mic and say a line." : err === "network" ? "Voice search needs the internet. Check your connection." : "Voice search isn't working here. Type the line instead."); $("#vsmic")?.classList.remove("on"); S.qrec = null; setTimeout(closeVoiceSheet, 3500); },
+  });
+  if (!S.qrec) { st("Voice search isn't available in this browser. Use your keyboard's mic, or type the line."); setTimeout(closeVoiceSheet, 3500); }
+}

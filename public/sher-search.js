@@ -88,28 +88,36 @@ function wordSim(q, w) {
 const STOP = new Set(["ki", "ke", "ka", "ko", "se", "me", "men", "hun", "he", "hen", "to", "bhi", "na", "ne", "jo", "o", "va", "ve", "ye", "vo", "ik", "ek"]);
 
 // Score one sher against the query words: average best match per word, plus a bonus for the right order.
-function scoreSher(qw, sw) {
+function scoreIds(sims, wts, ids) {
   let total = 0, inOrder = 0, last = -1, weight = 0;
-  for (const q of qw) {
-    const wt = STOP.has(q) ? 0.35 : 1; weight += wt;
+  for (let k = 0; k < sims.length; k++) {
+    const sim = sims[k], wt = wts[k]; weight += wt;
     let best = 0, at = -1;
-    for (let j = 0; j < sw.length; j++) { const v = wordSim(q, sw[j]); if (v > best || (v === best && j > last && at <= last)) { best = v; at = j; } }
+    for (let j = 0; j < ids.length; j++) { const v = sim[ids[j]]; if (v > best || (v === best && j > last && at <= last)) { best = v; at = j; } }
     if (best < 0.6) best = 0;
     total += best * wt;
     if (best && at > last) { inOrder++; last = at; }
   }
-  return total / weight * 0.85 + (qw.length > 1 ? inOrder / qw.length * 0.15 : 0.15);
+  return total / weight * 0.85 + (sims.length > 1 ? inOrder / sims.length * 0.15 : 0.15);
+}
+const SIMCACHE = new Map();
+function simTable(q, words) {
+  let t = SIMCACHE.get(q);
+  if (!t) { t = new Float32Array(words.length); for (let i = 0; i < words.length; i++) t[i] = wordSim(q, words[i]); if (SIMCACHE.size > 300) SIMCACHE.clear(); SIMCACHE.set(q, t); }
+  return t;
 }
 
 export async function loadIndex(url = "./sher-index.json") {
   if (INDEX) return INDEX;
   LOADING ||= fetch(url).then((r) => { if (!r.ok) throw new Error("Couldn't load the sher list."); return r.json(); }).then((j) => {
     const rows = [];
+    const vocab = new Map(), words = [];
+    const id = (w) => { let k = vocab.get(w); if (k === undefined) { k = words.length; vocab.set(w, k); words.push(w); } return k; };
     for (const g of j.ghazals) g.s.forEach((text, i) => {
-      const lines = text.split("\n"), keys = lines.map(soundKey);
-      rows.push({ g: g.g, title: g.title, year: g.year, n: i + 1, of: g.s.length, text, words: keys.join(" ").split(" ").filter(Boolean), lines: keys.map((k) => k.split(" ")) });
+      const lines = text.split("\n").map((l) => soundKey(l).split(" ").filter(Boolean).map(id));
+      rows.push({ g: g.g, title: g.title, year: g.year, n: i + 1, of: g.s.length, text, ids: lines.flat(), lines });
     });
-    INDEX = { rows, poet: j.poet, count: j.ghazals.length };
+    INDEX = { rows, words, poet: j.poet, count: j.ghazals.length };
     return INDEX;
   }).catch((e) => { LOADING = null; throw e; });
   return LOADING;
@@ -121,12 +129,13 @@ export async function searchShers(query, limit = 8) {
   const qw = soundKey(query).split(" ").filter(Boolean);
   if (!qw.length || (qw.length === 1 && qw[0].length < 3)) return [];
   const minScore = qw.length >= 3 ? 0.62 : 0.72;
+  const sims = qw.map((q) => simTable(q, idx.words)), wts = qw.map((q) => (STOP.has(q) ? 0.35 : 1));
   const out = [];
   for (const r of idx.rows) {
-    const sc = scoreSher(qw, r.words);
+    const sc = scoreIds(sims, wts, r.ids);
     if (sc >= minScore) {
       // which misra matched better, for highlighting
-      const l0 = scoreSher(qw, r.lines[0]), l1 = r.lines[1] ? scoreSher(qw, r.lines[1]) : 0;
+      const l0 = scoreIds(sims, wts, r.lines[0]), l1 = r.lines[1] ? scoreIds(sims, wts, r.lines[1]) : 0;
       out.push({ ...r, score: sc, line: l1 > l0 ? 1 : 0 });
     }
   }
@@ -140,16 +149,25 @@ export async function searchShers(query, limit = 8) {
 }
 
 // Spoken search: one tap, speak a line (Hindi/Urdu), get the text back. Returns { stop } or null if unsupported.
-export function listenOnce({ onText, onEnd, onError }) {
+// Spoken search: one tap, speak a line (Hindi/Urdu). Live text comes through onText as it's heard; it finishes by
+// itself 1.3 s after the speaker pauses (or after 12 s), or at once with done(). Returns { stop, done } or null.
+export function listenOnce({ onStart, onText, onEnd, onError }) {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) return null;
   const rec = new SR();
-  rec.lang = "hi-IN"; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
-  let final = "";
-  rec.onresult = (e) => { let t = ""; for (let i = 0; i < e.results.length; i++) { t += e.results[i][0].transcript; if (e.results[i].isFinal) final = t; } onText?.(t, false); };
-  rec.onerror = (e) => onError?.(e.error);
-  rec.onend = () => onEnd?.(final);
-  try { rec.start(); } catch (e) { onError?.("start"); return null; }
-  return { stop() { try { rec.stop(); } catch { /* ignore */ } } };
+  rec.lang = "hi-IN"; rec.interimResults = true; rec.continuous = true; rec.maxAlternatives = 1;
+  let text = "", ended = false, quietT = 0;
+  const hardT = setTimeout(() => finish(), 12000);
+  function finish() { if (ended) return; ended = true; clearTimeout(quietT); clearTimeout(hardT); try { rec.stop(); } catch { /* ignore */ } onEnd?.(text.trim()); }
+  rec.onstart = () => onStart?.();
+  rec.onresult = (e) => {
+    let t = ""; for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript + " ";
+    text = t.replace(/\s+/g, " ").trim(); onText?.(text);
+    clearTimeout(quietT); quietT = setTimeout(finish, 1300);
+  };
+  rec.onerror = (e) => { if (ended) return; if (e.error === "no-speech" && text) return finish(); ended = true; clearTimeout(quietT); clearTimeout(hardT); onError?.(e.error); };
+  rec.onend = () => finish();
+  try { rec.start(); } catch { clearTimeout(hardT); return null; }
+  return { stop() { if (ended) return; ended = true; clearTimeout(quietT); clearTimeout(hardT); try { rec.abort(); } catch { /* ignore */ } onEnd?.(""); }, done: finish };
 }
 export const canListen = () => !!(typeof window !== "undefined" && (window.SpeechRecognition || window.webkitSpeechRecognition));
