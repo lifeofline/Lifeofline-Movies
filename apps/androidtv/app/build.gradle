@@ -1,0 +1,39 @@
+plugins { id "com.android.application" }
+
+// Same package as the phone app, so it is one Play listing: this build goes on the "Android TV" release track.
+// TV version codes start at 1,000,000 so they never clash with the phone app's.
+android {
+    namespace "com.lifeofline.movies.tv"
+    compileSdk 36
+
+    defaultConfig {
+        applicationId "com.lifeofline.movies"
+        minSdk 24
+        targetSdk 36
+        versionCode(1000000 + ((System.getenv("VERSION_CODE") ?: "1") as int))
+        versionName(System.getenv("VERSION_NAME") ?: "1.0.0")
+        buildConfigField "String", "START_URL", '"https://movies.lifeofline.com/?src=tv#home"'
+        buildConfigField "String", "HOST", '"movies.lifeofline.com"'
+    }
+
+    buildFeatures { buildConfig true }
+
+    signingConfigs {
+        release {
+            storeFile file(System.getenv("KEYSTORE_FILE") ?: "upload.jks")
+            storePassword System.getenv("KEYSTORE_PASSWORD") ?: ""
+            keyAlias "upload"
+            keyPassword System.getenv("KEYSTORE_PASSWORD") ?: ""
+        }
+    }
+
+    buildTypes {
+        release { minifyEnabled false; signingConfig signingConfigs.release }
+        debug { applicationIdSuffix ".debug" }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

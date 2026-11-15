@@ -407,6 +407,9 @@ function wire(P) {
     else if (e.key === "ArrowLeft" || e.key === "MediaRewind") { e.preventDefault(); v.currentTime = Math.max(0, v.currentTime - 10); }
     else if (P.vertical && e.key === "ArrowDown") { e.preventDefault(); goNext(P, nextEp(P)); }
     else if (P.vertical && e.key === "ArrowUp") { e.preventDefault(); goNext(P, prevEp(P)); }
+    // TV remote on a wide (16:9) ghazal: up = last sher again, down = next sher.
+    else if (!P.vertical && P.shers.length && e.key === "ArrowUp" && !e.target.closest?.("button")) { e.preventDefault(); repeatSher(P); }
+    else if (!P.vertical && P.shers.length && e.key === "ArrowDown" && !e.target.closest?.("button")) { e.preventDefault(); nextSher(P); }
     else if (e.key === "MediaTrackNext" || e.key === "n") goNext(P, nextEp(P));
     else if ((e.key === "r" || e.key === "MediaTrackPrevious") && P.poetry) { e.preventDefault(); repeatSher(P); }
     else if (e.key === "f") toggleFullscreen(P);
@@ -502,6 +505,14 @@ function repeatSher(P) {
   const to = P.shers.length ? repeatTarget(P.shers, v.currentTime) : Math.max(0, v.currentTime - FALLBACK_BACK);
   v.currentTime = Math.min(to, v.duration - 1); P.loopLeft = P.loopN - 1;
   const fx = $("#pfxl", P.ov); if (fx) { const sp = fx.querySelector("span"); if (sp) sp.textContent = P.shers.length ? "Sher again" : `${FALLBACK_BACK} sec`; fx.classList.remove("on"); void fx.offsetWidth; fx.classList.add("on"); setTimeout(() => { if (sp) sp.textContent = "10 sec"; }, 700); }
+  if (v.paused) playSafe(P);
+  posState(P);
+}
+// Jump to the start of the next sher (TV remote: down arrow).
+function nextSher(P) {
+  const v = P.video; if (P.phase !== "play" || !v.duration) return;
+  const nx = P.shers.find((s) => s.t > v.currentTime + 0.5); if (!nx) return;
+  v.currentTime = Math.min(nx.t, v.duration - 1); P.loopLeft = P.loopN - 1;
   if (v.paused) playSafe(P);
   posState(P);
 }

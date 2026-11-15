@@ -483,6 +483,7 @@ html { overflow-x: clip; }
 @media (prefers-reduced-motion: reduce) { .ga-arrow { animation: none; } }
 /* Inside the Google Play / App Store app: Premium isn't sold there (store billing rules). */
 .store-app a[href="#plans"], .store-app [data-subscribe] { display: none !important; }
+.tv-app [data-google], .tv-app [data-facebook] { display: none !important; }
 
 /* Sign-in options: mobile number, Google, Facebook */
 .auth-alt { display: grid; gap: 10px; margin-top: 4px; }

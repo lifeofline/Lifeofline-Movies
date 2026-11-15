@@ -45,4 +45,6 @@ export function toast(msg, ms = 2400) {
 }
 
 // TVs and streaming sticks: Android TV, Google TV, Fire TV, Samsung Tizen, LG webOS, Sony Bravia, Chromecast.
-export const isTV = () => /Android TV|GoogleTV|AFT[A-Z]|SMART-TV|SmartTV|Tizen|Web0S|webOS|BRAVIA|CrKey|HbbTV|Large Screen/i.test(navigator.userAgent);
+// The Lifeofline Movies Android TV app adds "LifeoflineTV" to its browser name.
+export const TV_APP = /LifeoflineTV/.test(navigator.userAgent);
+export const isTV = () => /LifeoflineTV|Android TV|GoogleTV|AFT[A-Z]|SMART-TV|SmartTV|Tizen|Web0S|webOS|BRAVIA|CrKey|HbbTV|Large Screen/i.test(navigator.userAgent);

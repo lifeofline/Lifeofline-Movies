@@ -18,7 +18,7 @@ export const STORE_APP = (() => {
   try {
     const q = new URLSearchParams(location.search);
     if (window.Capacitor?.isNativePlatform?.() || q.get("src") === "ios") sessionStorage.setItem("lm-store", "ios");
-    else if (q.get("src") === "twa" || document.referrer.startsWith("android-app://")) sessionStorage.setItem("lm-store", "android");
+    else if (q.get("src") === "twa" || q.get("src") === "tv" || /LifeoflineTV/.test(navigator.userAgent) || document.referrer.startsWith("android-app://")) sessionStorage.setItem("lm-store", "android");
     return sessionStorage.getItem("lm-store") || "";
   } catch { return ""; }
 })();
@@ -156,6 +156,7 @@ function showPointer() {
 
 export function initInstall() {
   if (STORE_APP) document.body.classList.add("store-app");
+  if (/LifeoflineTV/.test(navigator.userAgent)) document.body.classList.add("tv-app"); // Google and Facebook block sign-in inside an app's built-in browser
   bar = document.createElement("div"); bar.id = "getapp-bar"; bar.hidden = true;
   sheet = document.createElement("div"); sheet.id = "getapp-sheet"; sheet.hidden = true; 
   sheet.setAttribute("role", "dialog"); sheet.setAttribute("aria-modal", "true"); sheet.setAttribute("aria-label", "Install the app");

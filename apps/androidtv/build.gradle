@@ -1,0 +1,6 @@
+// Lifeofline Movies for Android TV / Google TV: a full-screen web view of https://movies.lifeofline.com
+// (Chrome isn't on TVs, so the phone app's Trusted Web Activity can't be used here).
+// Built by .github/workflows/androidtv.yml; nothing to build on your own computer.
+plugins {
+    id "com.android.application" version "8.11.1" apply false
+}
