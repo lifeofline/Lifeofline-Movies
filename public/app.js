@@ -8,7 +8,8 @@ const SHOW_DEMOS = false;
 import { vPitch, slotRail } from "./pitch.js";
 import { LANGS, KINDS, KIDS_OK, freeEpisode } from "./access.js";
 import { openPlayer } from "./player.js";
-import { isPoetry } from "./shers.js";
+import { isPoetry, fmt as tfmt } from "./shers.js";
+import { searchShers, soundKey, listenOnce, canListen } from "./sher-search.js";
 import { createHelp } from "./help-widget.js";
 import { initInstall, installCard, markEngaged, STORE_APP } from "./install.js";
 
@@ -346,9 +347,12 @@ function vSearch(q = "") {
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
   const hits = words.length ? visible().filter((t) => words.every((w) => `${t.title} ${t.genre} ${t.lang} ${t.desc} ${(t.cast || []).join(" ")}`.toLowerCase().includes(w))) : [];
   return `<div class="ptitle"><h1>Search</h1></div>
-    <label class="search"><span class="sr">Search titles</span><input id="q" type="search" placeholder="Titles, genres, languages, actors" value="${esc(q)}" autocomplete="off" data-nav></label>
+    <div class="searchrow"><label class="search"><span class="sr">Search titles or shers</span><input id="q" type="search" placeholder="Titles, actors, or any line of a sher" value="${esc(q)}" autocomplete="off" data-nav></label>
+    ${canListen() ? `<button class="qmic" id="qmic" type="button" data-qmic aria-label="Say a sher" title="Say a line of a sher" data-nav><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>` : ""}</div>
+    ${words.length ? "" : `<p class="qhint">Remember a sher but not the ghazal? Type or say any part of it, in Hindi, Urdu or English letters: <button class="linkish" data-qtry="dil e nadan" data-nav>dil e nadan</button> · <button class="linkish" data-qtry="नींद क्यूँ रात भर नहीं आती" data-nav>नींद क्यूँ रात भर</button> · <button class="linkish" data-qtry="qarz ki peete the" data-nav>qarz ki peete the</button></p>`}
+    <div id="shers" class="sherhits" aria-live="polite"></div>
     <div class="grid" id="hits">${(words.length ? hits : visible().slice(0, 12)).map((t) => tile(t)).join("")}</div>
-    ${words.length && !hits.length ? empty(`No titles match “${esc(q)}”.`) : ""}`;
+    ${words.length && !hits.length ? `<div id="qnone">${empty(`No titles or shers match “${esc(q)}”.`)}</div>` : ""}`;
 }
 
 async function vTitle(id) {
@@ -583,7 +587,7 @@ async function route() {
   if (!S.keepScroll) window.scrollTo(0, 0);
   S.keepScroll = false;
   if (S.tv) setTimeout(() => { const f = $("#app [data-nav]"); if (f && !document.activeElement?.closest("#app")) f.focus({ preventScroll: true }); }, 30);
-  if (r === "search") { const q = $("#q"); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
+  if (r === "search") { const q = $("#q"); q.focus(); q.setSelectionRange(q.value.length, q.value.length); fillShers(S.q || ""); }
 }
 window.addEventListener("hashchange", () => { if (history.state?.player) return; route(); });
 
@@ -620,7 +624,7 @@ document.addEventListener("mouseout", (e) => { const t = e.target.closest(".tile
 document.addEventListener("focusin", (e) => { if (!S.tv) return; const t = e.target.closest?.(".tile"); $$(".tile.peek").forEach((x) => x !== t && unpeek(x)); if (t) peek(t); });
 
 /* ---------- actions ---------- */
-async function play(titleId, epId, trailer = false, listen = false) {
+async function play(titleId, epId, trailer = false, listen = false, at = null) {
   const t = withStarter(byId(titleId) || (await api.title(titleId)));
   if (!t) return toast("This title isn't available.");
   markEngaged();
@@ -629,9 +633,9 @@ async function play(titleId, epId, trailer = false, listen = false) {
   S.eps = { id: titleId, eps };
   const p = S.progress[titleId];
   if (!epId && !trailer) epId = p?.epId || eps[0]?.id;
-  const startAt = !trailer && p && p.epId === epId && p.pos < (p.dur || 0) - 30 ? p.pos : 0;
+  const startAt = at != null ? at : !trailer && p && p.epId === epId && p.pos < (p.dur || 0) - 30 ? p.pos : 0;
   openPlayer({
-    api, title: t, episodes: eps, epId, trailer, startAt, listen, ads: S.ads, direct: !t.trailerUid && t.teaser ? t.teaser : "",
+    api, title: t, episodes: eps, epId, trailer, startAt, listen, exactStart: at != null, ads: S.ads, direct: !t.trailerUid && t.teaser ? t.teaser : "",
     onNeedPlan: () => { location.hash = "#plans"; },
     onNeedSignIn: () => joinSheet("Create a free account to watch this", "This title is rated A (18+), so we need an account with your date of birth first."),
     onNeedAge: () => { location.hash = "#account"; },
@@ -898,4 +902,63 @@ api.onAuth(async (u) => {
   if (u && S.after) { const go = S.after; S.after = null; location.hash = go; }
   else if (u && /^#(signin|signup|reset)$/.test(location.hash)) location.hash = "#home";
   route();
+});
+
+/* ---------- search inside the ghazals: any part of a sher, typed or spoken ---------- */
+const GHALIB = "ghalib-zinda-hai";
+const gnum = (x) => String(parseInt(x, 10) || "");
+async function ghalibEpisodes() {
+  if (S.ghalibEps && Date.now() - S.ghalibEps.at < 5 * 60e3) return S.ghalibEps.list;
+  const list = await episodesOf(GHALIB).catch(() => []);
+  S.ghalibEps = { at: Date.now(), list }; return list;
+}
+// Where this sher is recited in the episode (from the episode's sher timings), or null.
+function sherTime(ep, hit) {
+  const sh = Array.isArray(ep?.shers) ? ep.shers : [];
+  if (!sh.length) return null;
+  const want = soundKey(hit.text.split("\n")[0]);
+  const byText = sh.find((x) => x.text && soundKey(String(x.text).split("\n")[0]) === want);
+  if (byText) return byText.t;
+  return sh.length === hit.of ? sh[hit.n - 1]?.t ?? null : null;
+}
+async function fillShers(q) {
+  const box = $("#shers"); if (!box) return;
+  const qq = String(q || "").trim();
+  if (qq.length < 3) { box.innerHTML = ""; return; }
+  const my = (S.sherQ = qq);
+  let hits;
+  try { hits = await searchShers(qq, 6); } catch { box.innerHTML = ""; return; }
+  if (S.sherQ !== my || !$("#shers")) return;
+  if (!hits.length) { box.innerHTML = ""; return; }
+  const none = $("#qnone"); if (none) none.hidden = true;
+  const eps = await ghalibEpisodes();
+  if (S.sherQ !== my) return;
+  const title = byId(GHALIB);
+  box.innerHTML = `<h2 class="rowh">Shers</h2>` + hits.map((h) => {
+    const ep = eps.find((e) => gnum(e.ghazal) === gnum(h.g) && (e.uid || e.video || e.duration));
+    const at = ep ? sherTime(ep, h) : null;
+    const lines = h.text.split("\n").map((l, i) => `<span class="${i === h.line ? "on" : ""}">${esc(l)}</span>`).join("");
+    const where = ep ? `${esc(title?.title || "Ghalib Zinda Hai")} · Episode ${ep.n}${ep.name ? ": " + esc(ep.name) : ""}` : "Coming soon on Lifeofline";
+    return `<article class="sherhit">
+      <p class="sht" lang="hi">${lines}</p>
+      <p class="shm">Mirza Ghalib · ${h.n === 1 ? "opening sher (matla)" : `from the ghazal “${esc(h.title)}”`}${h.year ? " · " + esc(h.year) : ""} · sher ${h.n} of ${h.of}</p>
+      <p class="shm">${where}</p>
+      ${ep ? `<div class="row"><button class="btn gold sm" data-shplay="${esc(ep.id)}" data-at="${at ?? ""}" data-nav>▶ ${at != null ? `Play from this sher (${tfmt(at)})` : "Play the ghazal"}</button><a class="btn ghost sm" href="#t/${GHALIB}" data-nav>All episodes</a></div>` : ""}
+    </article>`;
+  }).join("");
+}
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("[data-shplay], [data-qmic], [data-qtry]"); if (!t) return;
+  if (t.dataset.shplay) { const at = t.dataset.at === "" ? null : Math.max(0, Number(t.dataset.at)); play(GHALIB, t.dataset.shplay, false, false, at); return; }
+  if (t.dataset.qtry) { S.q = t.dataset.qtry; route(); return; }
+  if (t.hasAttribute("data-qmic")) {
+    if (S.qrec) { S.qrec.stop(); return; }
+    const q = $("#q"); t.classList.add("on"); q.placeholder = "Listening… say a line of the sher";
+    S.qrec = listenOnce({
+      onText: (txt) => { const q2 = $("#q"); if (q2) q2.value = txt; },
+      onEnd: (final) => { S.qrec = null; const b = $("#qmic"); b?.classList.remove("on"); const q2 = $("#q"); if (q2) q2.placeholder = "Titles, actors, or any line of a sher"; const v = (final || q2?.value || "").trim(); if (v) { S.q = v; route(); } },
+      onError: (err) => { S.qrec = null; $("#qmic")?.classList.remove("on"); toast(err === "not-allowed" || err === "service-not-allowed" ? "Allow the microphone for this site to search by voice." : err === "no-speech" ? "Didn't hear anything. Tap the mic and say a line." : "Voice search isn't working here. Type the line instead.", 4000); },
+    });
+    if (!S.qrec) { t.classList.remove("on"); toast("Voice search isn't available in this browser. Use your keyboard's mic instead.", 4000); }
+  }
 });

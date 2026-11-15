@@ -166,7 +166,8 @@ async function start(P, epId, trailer, startAt, skipIntro = false) {
   layer(P, "");
   P.phase = "play";
   // Resume where they stopped (switching between watching and listening resumes at the exact second).
-  const resume = startAt && (skipIntro ? startAt > 0 : startAt > 10) ? startAt : 0, room = skipIntro ? 1 : 30;
+  const exact = skipIntro || P.exactStart; // switching Watch/Listen, or jumping straight to a sher from search
+  const resume = startAt && (exact ? startAt > 0 : startAt > 10) ? startAt : 0, room = exact ? 1 : 30;
   if (resume) P.video.addEventListener("loadedmetadata", () => { if (resume < (P.video.duration || 0) - room) P.video.currentTime = resume; }, { once: true });
   if (resume && P.video.readyState >= 1 && resume < P.video.duration - room) P.video.currentTime = resume;
   playSafe(P);
