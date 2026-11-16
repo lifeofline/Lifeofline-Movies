@@ -12,6 +12,7 @@ import { isPoetry, fmt as tfmt } from "./shers.js";
 import { searchShers, soundKey, listenOnce, canListen, loadIndex as loadSherIndex } from "./sher-search.js";
 import { createHelp } from "./help-widget.js";
 import { initInstall, installCard, markEngaged, STORE_APP } from "./install.js";
+import { chapterMeta } from "./chapters.js";
 
 const DEMO = String(firebaseConfig.apiKey || "").startsWith("PASTE");
 // Sign-in pages served from movies.lifeofline.com itself (Render forwards /__/auth to Firebase), so Google sign-in
@@ -358,7 +359,7 @@ function vSearch(q = "") {
     ${words.length && !hits.length ? `<div id="qnone">${empty(`No titles or shers match “${esc(q)}”.`)}</div>` : ""}`;
 }
 
-async function vTitle(id) {
+async function vTitle(id, sub = "") {
   markEngaged();
   const t = withStarter(byId(id) || (await api.title(id).catch(() => null)));
   if (!t) return empty("This title isn't available.", `<a class="btn ghost" href="#home">Go home</a>`);
@@ -418,7 +419,7 @@ async function vTitle(id) {
     const badge = demo ? `<span class="echip">Demo</span>` : lockd ? `<span class="echip lockc">🔒 Premium</span>` : !S.premium && t.premium ? `<span class="echip freec">Free</span>` : "";
     const meta = [dur(e.duration), e.year || "", lockd && t.previewSec ? `${t.previewSec}s preview` : "", done ? "Watched" : ep ? "Watching" : ""].filter(Boolean).join(" · ");
     const art = e.thumb ? `background-image:${url(e.thumb)}` : t.poster ? `background-image:${url(t.poster)}` : posterStyle(t);
-    return `<button class="ep" data-play="${esc(t.id)}" data-ep="${esc(e.id)}" data-epid="${esc(e.id)}"${e.chapter ? ` data-ch="${esc(e.chapter)}"${chs.length > 1 && String(e.chapter) !== String(chapterOf(eps, first)) ? " hidden" : ""}` : ""} data-nav aria-label="Episode ${e.n}: ${esc(e.name || "")}">
+    return `<button class="ep" data-play="${esc(t.id)}" data-ep="${esc(e.id)}" data-epid="${esc(e.id)}"${e.chapter ? ` data-ch="${esc(e.chapter)}"` : ""} data-nav aria-label="Episode ${e.n}: ${esc(e.name || "")}">
       <span class="ethumb${e.thumb ? " real" : ""}" style="${art}"><span class="eplay" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M8 5v14l11-7z" fill="currentColor"/></svg></span>${e.duration ? `<span class="edur">${esc(dur(e.duration))}</span>` : ""}${pct ? `<span class="eprog"><i style="width:${pct}%"></i></span>` : ""}</span>
       <span class="einfo"><span class="etop"><span class="en">${e.n}</span>${badge}</span>
         <b class="et">${esc(e.name || "Episode " + e.n)}</b>
@@ -426,6 +427,10 @@ async function vTitle(id) {
       ${e.desc ? `<span class="ed">${esc(e.desc)}</span>` : ""}</button>`;
   };
   const synopsis = t.synopsis || t.desc || "";
+  const big = chs.length > 1 && t.kind !== "movie";
+  const cn = /^c(\d+)$/.exec(sub || "")?.[1];
+  const playBtn = (e, label) => soon ? "" : e && playLabel ? `<button class="btn gold big" data-play="${esc(t.id)}" data-ep="${esc(e.id)}" data-nav>▶ ${esc(label)}</button>` : !e ? "" : STORE_APP ? `<a class="btn gold big" href="#plans" data-nav>Premium title</a>` : `<a class="btn gold big" href="#plans" data-nav>Subscribe to watch · ₹${PRICE}</a>`;
+  if (big && cn && chs.some((c) => String(c.n) === cn)) return vChapter({ t, eps, chs, cn, epRow, playBtn, vert, url });
   return `<section class="dhero ${wide ? "wide" : "tall"}${vert ? " v" : ""}">
     <div class="dback" style="${wide || t.poster ? `background-image:${url(wide || t.poster)}` : posterStyle(t)}" aria-hidden="true"></div>
     ${wide ? `<div class="dart" style="background-image:${url(wide)}" aria-hidden="true"></div>`
@@ -443,7 +448,7 @@ async function vTitle(id) {
         ${!soon && first && playLabel && t.kind !== "movie" && (!vert || isPoetry(t)) ? `<button class="dico" data-play="${esc(t.id)}" data-ep="${esc(first.id)}" data-listen data-nav title="Plays the sound only, so you can lock your phone"><span aria-hidden="true">🎧</span>Listen</button>` : ""}
         <button class="dico" data-listtog="${esc(t.id)}" data-nav><span aria-hidden="true">${S.list.includes(t.id) ? "✓" : "＋"}</span>${S.list.includes(t.id) ? "In My List" : "My List"}</button>
         <button class="dico" data-share="${esc(t.id)}" data-nav><span aria-hidden="true">↗</span>Share</button>
-        ${t.kind !== "movie" && eps.length > 1 ? `<a class="dico" href="#episodes" data-jump="episodes" data-nav><span aria-hidden="true">≡</span>Episodes</a>` : ""}
+        ${t.kind !== "movie" && eps.length > 1 ? `<a class="dico" href="#episodes" data-jump="episodes" data-nav><span aria-hidden="true">≡</span>${big ? "Chapters" : "Episodes"}</a>` : ""}
       </div>
       ${synopsis ? `<p class="desc clamp" id="dsyn">${esc(synopsis)}</p><button class="linkish dmore" data-more="dsyn" data-nav>More</button>` : ""}
       ${t.synopsis && t.desc && t.desc !== t.synopsis ? `<p class="tagline">“${esc(t.desc)}”</p>` : ""}
@@ -451,9 +456,11 @@ async function vTitle(id) {
       ${soon && S.admin ? `<p class="small">Admin: ${concept ? "untick “Concept showcase” and add a release date when this becomes a real production. " : ""}Upload the film in <a href="#admin">Admin</a>, then untick “Coming soon”.</p>` : ""}
     </div>
   </section>
-  ${t.kind !== "movie" && eps.length ? `<section class="deps" id="episodes">
-    <div class="deps-h"><h2>Episodes</h2><span class="small">${eps.length} episode${eps.length === 1 ? "" : "s"}${chs.length > 1 ? ` in ${chs.length} chapters` : ""}</span></div>
-    ${chapterChips(eps, first)}
+  ${big ? `<section class="chaps" id="episodes">
+    <div class="deps-h"><h2>Chapters</h2><span class="small">${eps.length} episodes in ${chs.length} chapters · pick one to see its episodes</span></div>
+    <div class="chgrid">${chs.map((c) => chapterCard(t, eps, c, chs.length)).join("")}</div>
+  </section>` : t.kind !== "movie" && eps.length ? `<section class="deps" id="episodes">
+    <div class="deps-h"><h2>Episodes</h2><span class="small">${eps.length} episode${eps.length === 1 ? "" : "s"}</span></div>
     <div class="eps${vert ? " v" : ""}">${eps.map(epRow).join("")}</div>
   </section>` : ""}
   <section class="dabout"><h3>About ${esc(t.title)}</h3><dl class="facts">${facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl></section>
@@ -462,26 +469,58 @@ async function vTitle(id) {
 
 // Chapters (folders) inside a series: episodes carry `chapter` (number) and `chapterName`.
 // The title page shows one chip per chapter and lists that chapter's episodes; series without chapters look as before.
-function chapterOf(eps, cur) { return cur?.chapter || eps.find((e) => e.chapter)?.chapter || ""; }
 function chapterList(eps) {
   const chs = [];
   for (const e of eps) if (e.chapter && !chs.some((c) => String(c.n) === String(e.chapter))) chs.push({ n: e.chapter, name: e.chapterName || `Chapter ${e.chapter}`, count: 0 });
   for (const e of eps) { const c = chs.find((c) => String(c.n) === String(e.chapter)); if (c) c.count++; }
   return chs;
 }
-function chapterChips(eps, cur) {
-  const chs = chapterList(eps);
-  if (chs.length < 2) return "";
-  const on = String(chapterOf(eps, cur));
-  return `<div class="chips chapters" role="tablist" aria-label="Chapters">${chs.map((c) => `<button class="chip${String(c.n) === on ? " on" : ""}" role="tab" aria-selected="${String(c.n) === on}" data-chap="${esc(c.n)}" data-nav>${esc(c.n)}. ${esc(c.name)} <span class="small">· ${c.count}</span></button>`).join("")}</div>`;
+// One big card per chapter on the series page; tapping it opens #t/<id>/c<n> with that chapter's episodes.
+function chapterArt(t, eps, n) {
+  const m = chapterMeta(t, n);
+  if (m?.img) return m.img;
+  const e = eps.find((x) => String(x.chapter) === String(n) && x.thumb);
+  return e?.thumb || t.banner || t.poster || "";
 }
-document.addEventListener("click", (e) => {
-  const b = e.target.closest("[data-chap]"); if (!b) return;
-  const box = b.closest(".deps") || document;
-  box.querySelectorAll("[data-chap]").forEach((x) => { const on = x === b; x.classList.toggle("on", on); x.setAttribute("aria-selected", on); });
-  box.querySelectorAll(".eps .ep[data-ch]").forEach((x) => { x.hidden = x.dataset.ch !== b.dataset.chap; });
-  b.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
-});
+function chapterCard(t, eps, c, total) {
+  const m = chapterMeta(t, c.n) || {};
+  const mine = eps.filter((e) => String(e.chapter) === String(c.n));
+  const p = S.progress[t.id]; const here = p && mine.find((e) => e.id === p.epId);
+  const art = chapterArt(t, eps, c.n);
+  const range = mine.length ? `Episodes ${mine[0].n}–${mine[mine.length - 1].n}` : "";
+  return `<a class="chcard${here ? " here" : ""}" href="#t/${esc(t.id)}/c${esc(c.n)}" data-nav aria-label="Chapter ${esc(c.n)}: ${esc(m.en || c.name)}, ${c.count} episodes">
+    <span class="chimg"${art ? ` style="background-image:url('${String(art).replace(/'/g, "%27")}')"` : ""}><span class="chnum" aria-hidden="true">${esc(c.n)}</span>
+      <span class="chover"><span class="chno">Chapter ${esc(c.n)} of ${total}${m.yrs ? ` · ${esc(m.yrs)}` : ""}</span>${m.dev ? `<b class="chdev">${esc(m.dev)}</b>` : ""}<span class="chen">${esc(m.en || c.name)}</span></span></span>
+    <span class="chtxt">${m.text ? `<span class="chp">${esc(m.text)}</span>` : ""}
+      <span class="chfoot"><span>${c.count} episodes${range ? ` · ${range}` : ""}</span><span class="chgo">${here ? `▶ Continue ep ${here.n}` : "Open ›"}</span></span></span>
+  </a>`;
+}
+function vChapter({ t, eps, chs, cn, epRow, playBtn, vert, url }) {
+  const m = chapterMeta(t, cn) || {};
+  const c = chs.find((x) => String(x.n) === cn); const k = chs.indexOf(c);
+  const mine = eps.filter((e) => String(e.chapter) === cn);
+  const p = S.progress[t.id]; const here = p && mine.find((e) => e.id === p.epId);
+  const art = chapterArt(t, eps, cn);
+  const prev = chs[k - 1], next = chs[k + 1];
+  const mini = (x, dir) => { const mm = chapterMeta(t, x.n) || {}; const a = chapterArt(t, eps, x.n);
+    return `<a class="chmini ${dir}" href="#t/${esc(t.id)}/c${esc(x.n)}" data-nav><span class="chmimg"${a ? ` style="background-image:${url(a)}"` : ""}></span><span><span class="small">${dir === "prev" ? "‹ Previous" : "Next ›"} · Chapter ${esc(x.n)}</span><b>${esc(mm.dev || "")}</b><span>${esc(mm.en || x.name)}</span></span></a>`; };
+  return `<section class="chhero">
+    <div class="chhimg"${art ? ` style="background-image:${url(art)}"` : ""} aria-hidden="true"></div>
+    <div class="chhbody">
+      <a class="chback" href="#t/${esc(t.id)}" data-tochaps data-nav>‹ ${esc(t.title)} · all chapters</a>
+      <span class="eyebrow">Chapter ${esc(cn)} of ${chs.length}${m.yrs ? ` · ${esc(m.yrs)}` : ""}</span>
+      ${m.dev ? `<h1 class="chdev">${esc(m.dev)}</h1><p class="chen">${esc(m.en || c.name)}</p>` : `<h1>${esc(m.en || c.name)}</h1>`}
+      ${m.text ? `<p class="chp">${esc(m.text)}</p>` : ""}
+      <div class="row dact">${playBtn(here || mine[0], here ? `Continue ep ${here.n}` : `Play episode ${mine[0]?.n}`)}</div>
+    </div>
+  </section>
+  <section class="deps" id="episodes">
+    <div class="deps-h"><h2>Episodes</h2><span class="small">${mine.length} episodes · ${mine[0]?.n}–${mine[mine.length - 1]?.n} of ${eps.length}</span></div>
+    <div class="eps${vert ? " v" : ""}">${mine.map(epRow).join("")}</div>
+  </section>
+  <nav class="chnav" aria-label="Other chapters">${prev ? mini(prev, "prev") : "<span></span>"}${next ? mini(next, "next") : "<span></span>"}</nav>`;
+}
+document.addEventListener("click", (e) => { if (e.target.closest("[data-tochaps]")) S.toChaps = true; });
 // Title page: "More" opens the full synopsis; "Episodes" scrolls down to the list (without changing the address).
 document.addEventListener("click", (e) => {
   const m = e.target.closest("[data-more]");
@@ -652,10 +691,10 @@ let renderSeq = 0;
 async function route() {
   const seq = ++renderSeq;
   const h = decodeURIComponent((location.hash || "#home").slice(1));
-  const [r, arg] = h.split("/");
+  const [r, arg, sub] = h.split("/");
   if (r === "help" || r === "help-live") { location.replace("#home"); setTimeout(() => (r === "help-live" && S.user ? help.goLive() : help.open()), 300); return; }
   let html = "", tab = r;
-  if (r === "t") { html = await vTitle(arg); tab = ""; }
+  if (r === "t") { html = await vTitle(arg, sub); tab = ""; }
   else if (r === "reels") html = vReels();
   else if (r === "movies" || r === "series") html = vGrid(r);
   else if (r === "search") html = vSearch(S.q || "");
@@ -681,6 +720,7 @@ async function route() {
   clearTimeout(peekT);
   if (!S.keepScroll) window.scrollTo(0, 0);
   S.keepScroll = false;
+  if (S.toChaps) { S.toChaps = false; $("#episodes")?.scrollIntoView({ block: "start" }); }
   if (S.tv) setTimeout(() => { const f = $("#app [data-nav]"); if (f && !document.activeElement?.closest("#app")) f.focus({ preventScroll: true }); }, 30);
   if (r === "t") fillThumbs(arg);
   mountFlips();
