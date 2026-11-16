@@ -138,9 +138,13 @@ async function start(P, epId, trailer, startAt, skipIntro = false) {
   const epName = !trailer && P.title.kind !== "movie" && rawName && !/^(Episode|Ep\.?)\s*\d+$/i.test(rawName) ? rawName : "";
   $("#pname", P.ov).textContent = trailer ? `${P.title.title} · ${P.direct ? "Animated poster teaser" : "Trailer"}` : P.title.kind === "movie" ? P.title.title : epName || `${P.title.title} · Ep ${r.n}${P.title.demo ? " · Demo story card" : ""}`;
   { const sub = $("#psub", P.ov); sub.hidden = !epName; sub.textContent = epName ? `${P.title.title} · Ep ${r.n}` : ""; }
-  P.shers = !trailer && Array.isArray(P.ep?.shers) ? P.ep.shers.filter((x) => isFinite(x?.t)) : []; P.sherI = -1; P.loopLeft = 0;
+  { // Letter and story episodes carry "parts" (each letter or qissa, marked with a kind) instead of shers:
+    // they get the list to jump around, but none of the sher repeat/loop behaviour.
+    const all = !trailer && Array.isArray(P.ep?.shers) ? P.ep.shers.filter((x) => isFinite(x?.t)) : [];
+    const parts = all.length > 0 && all.every((x) => x.kind);
+    P.parts = parts ? all : []; P.shers = parts ? [] : all; P.sherI = -1; P.loopLeft = 0; }
   // Exact "↺ Sher" only when this episode has its sher timings; until then the button says what it really does.
-  { const sb = $("#psherb", P.ov); sb.hidden = !P.poetry || trailer; sb.textContent = P.shers.length ? "↺ Sher" : `↺ ${FALLBACK_BACK}s`; sb.setAttribute("aria-label", P.shers.length ? "Repeat the last sher" : `Back ${FALLBACK_BACK} seconds`); } $("#ploop", P.ov).hidden = !P.shers.length; $("#plist", P.ov).hidden = !P.shers.length;
+  { const sb = $("#psherb", P.ov); sb.hidden = !P.poetry || trailer; sb.textContent = P.shers.length ? "↺ Sher" : `↺ ${FALLBACK_BACK}s`; sb.setAttribute("aria-label", P.shers.length ? "Repeat the last sher" : `Back ${FALLBACK_BACK} seconds`); } $("#ploop", P.ov).hidden = !P.shers.length; { const pl = $("#plist", P.ov); pl.hidden = !P.shers.length && !P.parts.length; pl.textContent = P.parts.length ? "☰ Parts" : "☰ Shers"; pl.setAttribute("aria-label", P.parts.length ? "Letters and stories in this episode" : "List of shers"); }
   $("#ploop", P.ov).textContent = loopLabel(P.loopN); $("#ploop", P.ov).setAttribute("aria-pressed", P.loopN > 1);
   showSher(P, -1);
   const nx = nextEp(P); $("#pnext", P.ov).hidden = !nx; $("#pauto", P.ov).hidden = !(P.episodes?.length > 1) || trailer;
@@ -532,9 +536,10 @@ function showSher(P, i) {
   if (sh) box.innerHTML = `<p>${esc(sh.text).replace(/\n/g, "<br>")}</p>${sh.en ? `<small>${esc(sh.en).replace(/\n/g, "<br>")}</small>` : ""}<span class="lsn">Sher ${i + 1} of ${P.shers.length}</span>`;
 }
 function sherList(P) {
-  const cur = sherIndex(P.shers, P.video.currentTime);
-  layer(P, `<div class="pcard plistc"><div class="plbox"><span class="eyebrow">Shers in this ghazal</span>
-    <div class="shl">${P.shers.map((x, i) => `<button class="shr ${i === cur ? "on" : ""}" data-pjump="${x.t}"><span class="tm">${fmt(x.t)}</span><span class="tx">${esc(x.text || `Sher ${i + 1}`).replace(/\n/g, "<br>")}</span></button>`).join("")}</div>
+  const parts = !P.shers.length && P.parts.length, list = parts ? P.parts : P.shers;
+  const cur = sherIndex(list, P.video.currentTime);
+  layer(P, `<div class="pcard plistc"><div class="plbox"><span class="eyebrow">${parts ? "Letters and stories in this episode" : "Shers in this ghazal"}</span>
+    <div class="shl">${list.map((x, i) => `<button class="shr ${i === cur ? "on" : ""}" data-pjump="${x.t}"><span class="tm">${fmt(x.t)}</span><span class="tx">${esc(x.text || `Sher ${i + 1}`).replace(/\n/g, "<br>")}</span></button>`).join("")}</div>
     <div class="row"><button class="btn ghost" data-plclose>Back to the player</button></div></div></div>`);
 }
 
