@@ -12,7 +12,7 @@ import { isPoetry, fmt as tfmt } from "./shers.js";
 import { searchShers, soundKey, listenOnce, canListen, loadIndex as loadSherIndex } from "./sher-search.js";
 import { createHelp } from "./help-widget.js";
 import { initInstall, installCard, markEngaged, STORE_APP } from "./install.js";
-import { chapterMeta } from "./chapters.js";
+import { chapterMeta, SERIES_CHAPTERS } from "./chapters.js";
 
 const DEMO = String(firebaseConfig.apiKey || "").startsWith("PASTE");
 // Sign-in pages served from movies.lifeofline.com itself (Render forwards /__/auth to Firebase), so Google sign-in
@@ -57,7 +57,9 @@ const S = {
   lang: store.get("lang", "All"), kids: store.get("kids", null), tv: store.get("tv", isTV()), heroI: 0, ready: false,
   after: null, // where to go after signing in
 };
-const visible = () => S.titles.filter((t) => !S.kids?.on || KIDS_OK.has(t.rating || "U"));
+// The concept-film showcase (posters + animated teasers) is off for viewers: the site now leads with Ghalib Zinda Hai.
+const SHOW_CONCEPTS = false;
+const visible = () => S.titles.filter((t) => (!S.kids?.on || KIDS_OK.has(t.rating || "U")) && (SHOW_CONCEPTS || !t.concept));
 const byId = (id) => S.titles.find((t) => t.id === id);
 const inLang = (list) => (S.lang === "All" ? list : list.filter((t) => t.lang === S.lang));
 
@@ -184,14 +186,17 @@ function vHome() {
   const demos = inLang(all.filter(isDemo));
   const upcoming = inLang(all.filter((t) => isSoon(t) && !isConcept(t)));
   const concepts = inLang(all.filter(isConcept));
-  // Banner: always several slides so it keeps rolling. Titles people can watch now come first; while there are
-  // only a few, it fills up with the demo series and concept films (each clearly labelled on its slide).
+  // Banner: Ghalib Zinda Hai takes centre stage, one slide per chapter, with a house ad (ArtistCart, then SafetyFirst)
+  // after every 3 slides. Without the Ghalib title (or in kids mode) it falls back to the titles people can watch now.
   const art = (t) => !!(t.banner || t.poster || t.teaser);
-  const fill = [], d0 = all.filter((t) => isDemo(t) && art(t)), dq = [...d0.slice(d0.length >> 1), ...d0.slice(0, d0.length >> 1)], cq = all.filter((t) => isConcept(t) && art(t));
-  while (dq.length || cq.length) { if (cq.length) fill.push(cq.shift()); if (dq.length) fill.push(dq.shift()); }
-  const pool = [...new Set([...ready.filter(art), ...all.filter((t) => isSoon(t) && !isConcept(t) && art(t)), ...fill])].slice(0, 8);
-  // House promo for our artist app, shown as the second banner slide (not in kids mode).
-  if (pool.length && !S.kids?.on) pool.splice(1, 0, AC_PROMO);
+  const pool = [];
+  const g = all.find((t) => t.id === GHALIB_HERO);
+  const gch = g ? Object.keys(SERIES_CHAPTERS[g.id] || {}).sort((x, y) => x - y) : [];
+  const ads = S.kids?.on ? [] : [AC_PROMO, KYC_PROMO];
+  const base = gch.length ? gch.map((n) => ({ chap: true, t: g, n, m: chapterMeta(g, n), id: g.id, title: `${g.title} · Chapter ${n}` }))
+    : [...new Set([...ready.filter(art), ...all.filter((t) => isSoon(t) && !isConcept(t) && art(t))])].slice(0, 8);
+  base.forEach((h, k) => { pool.push(h); if ((k + 1) % 3 === 0 && ads.length && k < base.length - 1) pool.push(ads[(((k + 1) / 3) - 1) % ads.length]); });
+  if (pool.length && pool.length < 4 && ads.length) pool.splice(1, 0, ...ads);
   const cont = Object.entries(S.progress).sort((a, b) => b[1].at - a[1].at).map(([id]) => byId(id)).filter(Boolean).filter((t) => visible().includes(t) && avail(t));
   const list = S.list.map(byId).filter(Boolean);
   const newest = [...R].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0) || (a.order ?? 999) - (b.order ?? 999));
@@ -203,7 +208,6 @@ function vHome() {
     ${rail("Continue watching", cont)}
     ${rail("New on Lifeofline", newest.slice(0, 12))}
     ${many ? "" : rail("Series · demo", demos, { sub: "Fictional animated story cards · free, no ads" })}
-    ${many ? "" : rail("Films · concept showcase", concepts, { sub: "Fictional films in development · animated poster teasers" })}
     ${top10(ready)}
     ${rail("Reels · short dramas", R.filter((t) => t.kind === "short"), { more: "#reels", sub: "Two-minute episodes" })}
     ${many ? row("Lifeofline Originals", R.filter((t) => t.original && t.kind !== "short"), { shape: "wide" }) : ""}
@@ -212,11 +216,10 @@ function vHome() {
     ${many ? GENRE_RAILS.map(([name, re]) => row(name, R.filter((t) => re.test(t.genre || "")))).join("") : ""}
     ${many ? LANGS.map((l) => row(`In ${l}`, ready.filter((t) => t.lang === l))).join("") : ""}
     ${rail("My List", list, { shape: "tall" })}
-    ${R.length ? "" : `<div class="note-strip"><b>New films and series are being added.</b> Until then, try the demo series and the concept film teasers above.</div>`}
+    ${R.length ? "" : `<div class="note-strip"><b>New films and series are being added.</b> Check back soon.</div>`}
     ${many ? rail("Demo series", demos, { sub: "Fictional animated story cards · 3 silent 5-second episodes each · free, no ads" }) : ""}
     ${rail("Coming soon", upcoming, { sub: "Release dates where confirmed" })}
     ${S.kids?.on ? "" : slotRail()}
-    ${many ? rail("Concept showcase", concepts, { sub: "Fictional films in development · animated poster teasers, not film footage" }) : ""}
     ${S.premium || S.kids?.on ? "" : planStrip(ready)}`;
 }
 // The ₹999 yearly plan, explained with what is actually available today.
@@ -229,21 +232,50 @@ function planStrip(ready) {
     ${faqHtml(ready, 3)}</section>`;
 }
 // Full-width banner that rotates through up to 6 titles, playing each one's teaser, like the big streaming apps.
-const AC_PROMO = { promo: true, id: "artistcart", title: "ArtistCart", link: "https://lifeofline.com", art: "posters/artistcart-promo-v2.jpg" };
+const GHALIB_HERO = "ghalib-zinda-hai";
+const AC_PROMO = { promo: true, id: "artistcart", title: "ArtistCart app", link: "https://lifeofline.com", art: "posters/artistcart-promo-v2.jpg",
+  eyebrow: "From Lifeofline · ArtistCart app", h1: "Free to work? <em>Get booked.</em>", tag: "Actors · Models · Dancers · Musicians · Crew",
+  text: "The app for India's artists. Show makers you're free, get offers, and find castings, auditions and workshops in your city. Production houses and creators can post what they need.",
+  go: "Join ArtistCart free", go2: "I'm hiring" };
+const KYC_PROMO = { promo: true, id: "safetyfirst", title: "SafetyFirst", link: "https://kyc.lifeofline.com", art: "posters/safetyfirst-promo.jpg", cls: "kyc",
+  eyebrow: "From Lifeofline · SafetyFirst", h1: "Before you say yes, <em>check.</em>", tag: "Matrimony · Dating · Jobs · Scams",
+  text: "Meeting someone from a matrimony site or a dating app? Check their profile first: identity, employer, education and social accounts, with a trust score. Quick, private, and they aren't told.",
+  go: "Check a profile", go2: "How it works" };
 function promoSlide(h, i, n) {
   const bg = `background-image:url('${h.art}')`;
-  return `<article class="slide promo ${i === 0 ? "on" : ""}" data-i="${i}" aria-roledescription="slide" aria-label="${i + 1} of ${n}: ArtistCart app" ${i ? 'aria-hidden="true"' : ""}>
+  return `<article class="slide promo ${h.cls || ""} ${i === 0 ? "on" : ""}" data-i="${i}" aria-roledescription="slide" aria-label="${i + 1} of ${n}: ${esc(h.title)}" ${i ? 'aria-hidden="true"' : ""}>
       <div class="sbg" style="${bg}"></div>
-      <a class="sart" href="${h.link}" target="_blank" rel="noopener" style="${bg};background-size:cover;background-position:center" aria-label="Open ArtistCart"></a>
+      <a class="sart" href="${h.link}" target="_blank" rel="noopener" style="${bg};background-size:cover;background-position:center" aria-label="Open ${esc(h.title)}"></a>
       <div class="hshade"></div>
       <div class="hcopy">
-        <span class="eyebrow">From Lifeofline · ArtistCart app</span>
-        <h1>Free to work? <em>Get booked.</em></h1>
-        <div class="meta"><span class="rating">Free</span><span>Actors · Models · Dancers · Musicians · Crew</span></div>
-        <p>The app for India's artists. Show makers you're free, get offers, and find castings, auditions and workshops in your city. Production houses and creators can post what they need.</p>
+        <span class="eyebrow">${esc(h.eyebrow)}</span>
+        <h1>${h.h1}</h1>
+        <div class="meta"><span class="rating">Free</span><span>${esc(h.tag)}</span></div>
+        <p>${esc(h.text)}</p>
         <div class="row">
-          <a class="btn gold" href="${h.link}" target="_blank" rel="noopener">Join ArtistCart free</a>
-          <a class="btn ghost" href="${h.link}" target="_blank" rel="noopener">I'm hiring</a>
+          <a class="btn gold" href="${h.link}" target="_blank" rel="noopener">${esc(h.go)}</a>
+          <a class="btn ghost" href="${h.link}" target="_blank" rel="noopener">${esc(h.go2)}</a>
+        </div>
+      </div>
+    </article>`;
+}
+// One Ghalib Zinda Hai chapter as a banner slide: the chapter's picture, its Hindustani name and story, and a way in.
+function chapterSlide(h, i, n) {
+  const { t, m } = h; const img = `url('${String(m.img).replace(/'/g, "%27")}')`;
+  const total = Object.keys(SERIES_CHAPTERS[t.id] || {}).length;
+  return `<article class="slide chap ${i === 0 ? "on" : ""}" data-i="${i}" aria-roledescription="slide" aria-label="${i + 1} of ${n}: ${esc(t.title)}, chapter ${esc(h.n)}" ${i ? 'aria-hidden="true"' : ""}>
+      <div class="sbg wide" style="background-image:${img}"></div>
+      <a class="sart mob" href="#t/${esc(t.id)}/c${esc(h.n)}" style="background:#000 ${img} center/cover" aria-label="Open chapter ${esc(h.n)}" data-nav></a>
+      <div class="hshade"></div>
+      <div class="hcopy">
+        <span class="eyebrow">Lifeofline Original · ${esc(t.title)} · Chapter ${esc(h.n)} of ${total}</span>
+        <h1 class="hdev">${esc(m.dev)}</h1>
+        <div class="meta"><span class="rating">${esc(t.rating || "U")}</span><span class="hen">${esc(m.en)}</span><span>${esc(m.yrs)}</span></div>
+        <p>${esc(m.text)}</p>
+        <div class="row">
+          <a class="btn gold" href="#t/${esc(t.id)}/c${esc(h.n)}" data-nav>▶ Watch chapter ${esc(h.n)}</a>
+          <button class="btn ghost" data-listtog="${esc(t.id)}" data-nav>${S.list.includes(t.id) ? "✓ My List" : "＋ My List"}</button>
+          <a class="btn ghost" href="#t/${esc(t.id)}" data-nav>ⓘ All chapters</a>
         </div>
       </div>
     </article>`;
@@ -251,6 +283,7 @@ function promoSlide(h, i, n) {
 function heroCarousel(pool) {
   const slide = (h, i) => {
     if (h.promo) return promoSlide(h, i, pool.length);
+    if (h.chap) return chapterSlide(h, i, pool.length);
     // A purpose-made 16:9 banner fills the whole slide. The demo series' landscape images are text cards with the
     // poster inside, which get cropped and zoomed when stretched to fill, so those slides use the poster layout.
     const wide = !!h.banner && !isDemo(h);
@@ -324,8 +357,8 @@ function vGrid(kind) {
   const rank = (t) => (real(t) ? 0 : isDemo(t) ? 1 : 2);
   const items = base.filter((t) => f === "now" ? real(t) : f === "demo" ? isDemo(t) : f === "soon" ? !avail(t) : true).sort((a, b) => rank(a) - rank(b));
   const nNow = base.filter(real).length, nDemo = base.filter(isDemo).length, nSoon = base.filter((t) => !avail(t)).length;
-  const label = { all: "All", now: `Available now (${nNow})`, demo: `Demo series (${nDemo})`, soon: `Coming soon and concepts (${nSoon})` };
-  const keys = ["all", "now", ...(nDemo ? ["demo"] : []), "soon"];
+  const label = { all: "All", now: `Available now (${nNow})`, demo: `Demo series (${nDemo})`, soon: `Coming soon (${nSoon})` };
+  const keys = ["all", "now", ...(nDemo ? ["demo"] : []), ...(nSoon ? ["soon"] : [])];
   return `<div class="ptitle"><h1>${kind === "movies" ? "Movies" : "Series and short dramas"}</h1><span>${items.length} title${items.length === 1 ? "" : "s"}</span></div>
     <div class="chips" role="group" aria-label="Availability">${keys.map((k) => `<button class="chip ${f === k ? "on" : ""}" data-avail="${k}" data-nav>${label[k]}</button>`).join("")}</div>
     ${chips()}

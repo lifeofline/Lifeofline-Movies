@@ -98,6 +98,11 @@ body.home .top:not(.solid), body.titlepg .top:not(.solid) { background: linear-g
 @keyframes fill { to { width: 100%; } }
 /* phones: a wide banner would be cropped to a sliver, so wide slides show the title's poster card instead */
 .sart.mob { display: none; }
+.slide.chap .hdev { font-family: "Tiro Devanagari Hindi", var(--f-display); font-weight: 400; line-height: 1.2; }
+.slide.chap .hen { font-family: var(--f-display); font-weight: 700; color: #f6e2bd; font-size: 17px; }
+.slide.chap .hcopy { max-width: min(620px, 58vw); }
+.slide.promo.kyc h1 em { font-style: normal; background: linear-gradient(90deg, #3fe0b4, #6c8cff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.slide.promo.kyc .sart { box-shadow: 0 30px 80px rgba(0,0,0,.6), 0 0 90px rgba(60,220,180,.25); }
 .slide.promo h1 em { font-style: normal; background: linear-gradient(90deg, #ffcf5c, #ff8cc8 60%, #b9a6ff); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .slide.promo .sbg { filter: blur(26px) brightness(.6) saturate(1.5); }
 .slide.promo .sart { box-shadow: 0 30px 80px rgba(0,0,0,.6), 0 0 90px rgba(255,120,200,.25); }
@@ -110,6 +115,9 @@ body.home .top:not(.solid), body.titlepg .top:not(.solid) { background: linear-g
   .hshade { background: linear-gradient(0deg, var(--ink) 0%, rgba(20,15,28,0) 45%); }
   .hcopy { position: relative; left: auto; bottom: auto; max-width: 100%; align-items: center; text-align: center; margin-top: 18px; }
   .hcopy p { display: none; }
+  .slide.chap .sart.mob { width: calc(100vw - 32px); max-width: 560px; aspect-ratio: 4 / 3; }
+  .slide.chap .hcopy { max-width: 100%; }
+  .slide.chap .hcopy p { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-size: 15px; }
   .hero h1 { font-size: clamp(32px, 10vw, 44px); }
   .hero .meta { justify-content: center; }
   .hcopy .row { justify-content: center; }
