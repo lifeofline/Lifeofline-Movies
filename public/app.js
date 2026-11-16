@@ -138,7 +138,8 @@ function tile(t, shape = "tall") {
     : isSoon(t) ? `<span class="tag soon">${relDate(t) ? esc(relDate(t)) : "Coming soon"}</span>`
     : !t.premium ? `<span class="tag">Free</span>` : freeCount(t) > 0 && !S.premium ? `<span class="tag">Ep 1 free</span>` : `<span class="tag prem">Premium</span>`;
   const pct = p?.dur ? Math.min(100, (p.pos / p.dur) * 100) : 0;
-  return `<a class="tile" href="#t/${esc(t.id)}" data-nav aria-label="${esc(t.title)}"${t.teaser ? ` data-teaser="${esc(t.teaser)}"` : ""}>
+  const flip = t.kind === "series" && (t.episodeCount || 0) >= 6 && !isDemo(t) && !isConcept(t) && !isSoon(t);
+  return `<a class="tile" href="#t/${esc(t.id)}" data-nav aria-label="${esc(t.title)}"${t.teaser ? ` data-teaser="${esc(t.teaser)}"` : ""}${flip ? ` data-flip="${esc(t.id)}"` : ""}>
     <div class="poster ${shape}" style="${posterStyle(t)}">${tag}${t.format === "v" ? '<span class="tag r">9:16</span>' : ""}${t.poster ? "" : `<div class="pt">${esc(t.title)}</div>`}</div>
     ${p ? `<div class="prog"><i style="width:${pct}%"></i></div>` : ""}
     <div class="cap">${t.poster ? `<b>${esc(t.title)}</b>` : ""}<span>${isConcept(t) ? "Concept" : isDemo(t) ? "Demo series · 3 short episodes" : `${esc(KINDS[t.kind] || "")} · ${esc(t.lang || "")}`}</span></div></a>`;
@@ -198,8 +199,8 @@ function vHome() {
   return `${pool.length ? heroCarousel(pool) : ""}
     ${chips()}
     ${S.premium ? "" : rail("Watch free now", R.filter(freeNow), { sub: "No plan needed · short ad breaks" })}
-    ${rail("Continue watching", cont, { shape: "wide" })}
-    ${rail("New on Lifeofline", newest.slice(0, 12), { shape: "wide" })}
+    ${rail("Continue watching", cont)}
+    ${rail("New on Lifeofline", newest.slice(0, 12))}
     ${many ? "" : rail("Series · demo", demos, { sub: "Fictional animated story cards · free, no ads" })}
     ${many ? "" : rail("Films · concept showcase", concepts, { sub: "Fictional films in development · animated poster teasers" })}
     ${top10(ready)}
@@ -413,15 +414,16 @@ async function vTitle(id) {
     const ep = S.progress[id]?.epId === e.id ? S.progress[id] : null;
     const pct = ep && ep.dur ? Math.min(100, Math.round((ep.pos / ep.dur) * 100)) : 0;
     const done = pct > 90;
-    const badge = demo ? `<span class="free">Demo</span>` : locked(e) ? `<span class="lock">🔒 ${t.previewSec ? `${t.previewSec}s free · ` : ""}${STORE_APP ? "Premium" : `₹${PRICE} plan`}</span>` : !S.premium && t.premium ? `<span class="free">Free</span>` : "";
-    const meta = [dur(e.duration), e.year || "", done ? "Watched" : ep ? "Watching" : ""].filter(Boolean).join(" · ");
+    const lockd = !demo && locked(e);
+    const badge = demo ? `<span class="echip">Demo</span>` : lockd ? `<span class="echip lockc">🔒 Premium</span>` : !S.premium && t.premium ? `<span class="echip freec">Free</span>` : "";
+    const meta = [dur(e.duration), e.year || "", lockd && t.previewSec ? `${t.previewSec}s preview` : "", done ? "Watched" : ep ? "Watching" : ""].filter(Boolean).join(" · ");
     const art = e.thumb ? `background-image:${url(e.thumb)}` : t.poster ? `background-image:${url(t.poster)}` : posterStyle(t);
     return `<button class="ep" data-play="${esc(t.id)}" data-ep="${esc(e.id)}" data-epid="${esc(e.id)}"${e.chapter ? ` data-ch="${esc(e.chapter)}"${chs.length > 1 && String(e.chapter) !== String(chapterOf(eps, first)) ? " hidden" : ""}` : ""} data-nav aria-label="Episode ${e.n}: ${esc(e.name || "")}">
       <span class="ethumb${e.thumb ? " real" : ""}" style="${art}"><span class="eplay" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M8 5v14l11-7z" fill="currentColor"/></svg></span>${e.duration ? `<span class="edur">${esc(dur(e.duration))}</span>` : ""}${pct ? `<span class="eprog"><i style="width:${pct}%"></i></span>` : ""}</span>
       <span class="einfo"><span class="etop"><span class="en">${e.n}</span>${badge}</span>
         <b class="et">${esc(e.name || "Episode " + e.n)}</b>
-        ${meta ? `<span class="emeta">${esc(meta)}</span>` : ""}
-        ${e.desc ? `<span class="ed">${esc(e.desc)}</span>` : ""}</span></button>`;
+        ${meta ? `<span class="emeta">${esc(meta)}</span>` : ""}</span>
+      ${e.desc ? `<span class="ed">${esc(e.desc)}</span>` : ""}</button>`;
   };
   const synopsis = t.synopsis || t.desc || "";
   return `<section class="dhero ${wide ? "wide" : "tall"}${vert ? " v" : ""}">
@@ -487,6 +489,44 @@ document.addEventListener("click", (e) => {
   const j = e.target.closest("[data-jump]");
   if (j) { e.preventDefault(); document.getElementById(j.dataset.jump)?.scrollIntoView({ behavior: "smooth", block: "start" }); }
 });
+// Series tiles come alive: the poster flips through stills from the episodes (signed frames from /thumbs),
+// a new one every 1.6 seconds while the tile is on screen. Off for "reduce motion".
+let flipTimer = 0; const FLIPS = {}; // titleId -> { pics, k }
+async function thumbsFor(id) {
+  if (!api.thumbs) return {};
+  const c = S.thumbs?.[id]; if (c && c.until > Date.now()) return c.map;
+  let map = {}; try { map = (await api.thumbs(id)) || {}; } catch { return {}; }
+  (S.thumbs ||= {})[id] = { map, until: Date.now() + 60 * 60e3 }; return map;
+}
+// One ticker for the whole app; it works on whatever tiles are on screen at each tick, so re-drawn pages keep flipping.
+async function mountFlips() {
+  if (calm()) return;
+  const ids = [...new Set($$(".tile[data-flip]").map((x) => x.dataset.flip))].slice(0, 6);
+  await Promise.all(ids.filter((id) => !FLIPS[id]).map(async (id) => {
+    const urls = Object.values(await thumbsFor(id)); if (urls.length < 3) { FLIPS[id] = { pics: [] }; return; }
+    const pics = []; const n = Math.min(9, urls.length);
+    for (let k = 0; k < n; k++) pics.push(urls[Math.floor((k * urls.length) / n)]);
+    pics.forEach((u) => { const im = new Image(); im.src = u; }); // warm the cache so each change is instant
+    FLIPS[id] = { pics, k: -1 };
+  }));
+  if (flipTimer) return;
+  flipTimer = setInterval(() => {
+    if (document.hidden || document.body.classList.contains("playing")) return;
+    for (const [id, F] of Object.entries(FLIPS)) {
+      if (!F.pics?.length) continue;
+      F.k = (F.k + 1) % (F.pics.length + 1); // one step on the poster itself after each round
+      for (const tl of $$(`.tile[data-flip="${CSS.escape(id)}"]`)) {
+        const box = $(".poster", tl); if (!box) continue;
+        let fl = box.querySelector(".flip");
+        if (!fl) { box.insertAdjacentHTML("afterbegin", `<span class="flip" aria-hidden="true"><i></i><i></i></span>`); fl = box.querySelector(".flip"); }
+        const [a, b] = fl.querySelectorAll("i");
+        if (F.k === F.pics.length) { a.classList.remove("on"); b.classList.remove("on"); continue; }
+        const show = a.classList.contains("on") ? b : a, hide = show === a ? b : a;
+        show.style.backgroundImage = `url('${F.pics[F.k].replace(/'/g, "%27")}')`; show.classList.add("on"); hide.classList.remove("on");
+      }
+    }
+  }, 1600);
+}
 // Episode pictures: a frame from each episode's own video, signed by the server (videos only play through signed links).
 async function fillThumbs(id) {
   if (!api.thumbs) return;
@@ -643,6 +683,7 @@ async function route() {
   S.keepScroll = false;
   if (S.tv) setTimeout(() => { const f = $("#app [data-nav]"); if (f && !document.activeElement?.closest("#app")) f.focus({ preventScroll: true }); }, 30);
   if (r === "t") fillThumbs(arg);
+  mountFlips();
   if (r === "search") { const q = $("#q"); q.focus(); q.setSelectionRange(q.value.length, q.value.length); loadSherIndex().catch(() => {}); fillShers(S.q || ""); }
 }
 window.addEventListener("hashchange", () => { if (history.state?.player) return; route(); });

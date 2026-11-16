@@ -81,6 +81,8 @@ export function createDemoApi() {
 
     track() {},
     async reportProblem() { return wait(true); },
+    // Episode stills: demo episodes only have one if a picture was set on them.
+    async thumbs(titleId) { const m = {}; (D.episodes[titleId] || []).forEach((e) => { if (e.thumb) m[e.id] = e.thumb; }); return m; },
     async play(titleId, epId, trailer) {
       const t = D.titles[titleId]; if (!t) throw err("This title isn't available.");
       const base = { ads: !premium(), premium: premium(), rating: t.rating, title: t.title, format: t.format, hls: SAMPLE_HLS, poster: "", test: true };
