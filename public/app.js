@@ -30,9 +30,9 @@ const PRICE = 999; // Premium is paid once a year
 
 /* ---------- chat support: quick answers, then the Lifeofline Helpdesk ---------- */
 const HELP_FAQS = [
-  { id: "price", q: "How much is Premium?", keys: /\b(premium|price|cost|499|999|plan|subscri|how much|charge)\w*/, a: `<b>Premium is ₹${PRICE} a year</b> (prices include GST): every available film, series and short drama, no ads, Full HD where available, on phone, computer and TV. There's also a free plan with ads.`, links: [["See plans", "#lh:go:#plans"]], next: ["free", "pay", "cancel"] },
+  { id: "price", q: "How much is Premium?", keys: /\b(premium|price|cost|499|999|plan|subscri|how much|charge)\w*/, a: STORE_APP ? "Premium isn't sold in this app. If you already have Premium, sign in with the same account and everything unlocks here too. Free titles play with short ad breaks." : `<b>Premium is ₹${PRICE} a year</b> (prices include GST): every available film, series and short drama, no ads, Full HD where available, on phone, computer and TV. There's also a free plan with ads.`, links: [["See plans", "#lh:go:#plans"]], next: ["free", "pay", "cancel"] },
   { id: "free", q: "What can I watch free?", keys: /\b(free|without pay|no money|ads?|advert)\b/, a: "Titles marked <b>Free</b>, the first episodes of many series and short dramas, and every poster teaser and trailer play free with short ad breaks. Premium removes the ads and unlocks everything.", next: ["price"] },
-  { id: "pay", q: "How can I pay?", keys: /\b(pay|payment|upi|card|netbank|gpay|phonepe|paytm|razorpay|failed|declined|deducted)\w*/, a: "Pay with UPI (GPay, PhonePe, Paytm and others), debit or credit card, or netbanking through Razorpay. If money was deducted but Premium didn't start, wait 10 minutes and reopen the app; if it still hasn't, chat with the Helpdesk and we'll fix it.", next: ["price", "refund"] },
+  { id: "pay", q: "How can I pay?", keys: /\b(pay|payment|upi|card|netbank|gpay|phonepe|paytm|razorpay|failed|declined|deducted)\w*/, a: STORE_APP ? "Nothing can be bought in this app. Free titles play with short ad breaks, and if you already have Premium, sign in with the same account to unlock everything." : "Pay with UPI (GPay, PhonePe, Paytm and others), debit or credit card, or netbanking through Razorpay. If money was deducted but Premium didn't start, wait 10 minutes and reopen the app; if it still hasn't, chat with the Helpdesk and we'll fix it.", next: ["price", "refund"] },
   { id: "cancel", q: "How do I cancel?", keys: /\b(cancel|stop|unsubscri|autopay|mandate|renew)\w*/, a: "Open <b>Account → Plan → Cancel renewal</b>. No more charges are made and Premium keeps working until the end of the period you paid for. You can also cancel the UPI Autopay mandate in your UPI app.", links: [["Open Account", "#lh:go:#account"]], next: ["refund"] },
   { id: "refund", q: "Refunds", keys: /\b(refund|money back|charged twice|double|wrong charge|by mistake)\w*/, a: "A Premium period that has started isn't refunded. <b>Charged twice, after cancelling or by mistake?</b> Tell us within 30 days and we refund the extra payment in full. Refunds reach your bank in 5–7 working days.", links: [["Refund policy", "refund.html"]], next: ["pay"] },
   { id: "tv", q: "Watch on my TV", keys: /\b(tv|television|fire ?tv|android tv|google tv|smart tv|chromecast|cast|big screen)\w*/, a: "Open <b>movies.lifeofline.com</b> in the browser of your Android TV, Google TV or Fire TV and sign in. It switches to a TV layout you can use with the remote. Store apps for TV and phones are coming.", next: ["devices"] },
@@ -94,7 +94,7 @@ function shell(route) {
   $("#tabbar").innerHTML = tabs.map(([k, l, d]) => `<a href="#${k}" class="${route === k ? "on" : ""}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="${d}"/></svg>${l}</a>`).join("");
   $("#tabbar").hidden = false;
   $("#me").innerHTML = S.premium ? `<a href="#account" class="badge prem" data-nav>Premium</a>`
-    : `<a href="#plans" class="btn gold sm" data-nav>Subscribe ₹${PRICE}/yr</a>`;
+    : STORE_APP ? "" : `<a href="#plans" class="btn gold sm" data-nav>Subscribe ₹${PRICE}/yr</a>`;
   $("#acct").innerHTML = S.user ? `<a href="#account" class="avatar" data-nav aria-label="Account">${esc((S.user.name || "?").slice(0, 1).toUpperCase())}</a>` : `<a href="#signin" class="btn ghost sm" data-nav>Sign in</a>`;
   $("#demo").hidden = !DEMO;
   document.body.classList.toggle("tv", !!S.tv);
@@ -129,7 +129,7 @@ function mainAction(t) {
   if (S.premium) return `<button class="btn gold" data-play="${esc(t.id)}" data-nav>▶ Play</button>`;
   if (!t.premium) return `<button class="btn gold" data-play="${esc(t.id)}" data-nav>▶ Watch free</button>`;
   if (freeCount(t) > 0) return `<button class="btn gold" data-play="${esc(t.id)}" data-nav>▶ Watch episode 1 free</button>`;
-  return `<a class="btn gold" href="#plans" data-nav>Subscribe to watch · ₹${PRICE}</a>`;
+  return STORE_APP ? `<a class="btn gold" href="#plans" data-nav>Premium title</a>` : `<a class="btn gold" href="#plans" data-nav>Subscribe to watch · ₹${PRICE}</a>`;
 }
 function tile(t, shape = "tall") {
   const p = S.progress[t.id];
@@ -219,6 +219,7 @@ function vHome() {
 }
 // The ₹999 yearly plan, explained with what is actually available today.
 function planStrip(ready) {
+  if (STORE_APP) return ""; // Google Play / App Store apps don't sell Premium or show its price
   const n = ready.length;
   return `<section class="planbox"><div class="pb-main"><div class="price">₹${PRICE}<small> / year</small></div>
       <p>${n ? `${n} title${n === 1 ? "" : "s"} available today. Premium unlocks all of them with no ads, in Full HD, on your phone, computer and TV.` : "Premium unlocks every film and series as it's released, with no ads."} Prices include GST. Cancel anytime.</p>
@@ -378,13 +379,14 @@ async function vTitle(id) {
   else if (soon) access = relDate(t) ? `Coming soon · releasing ${relDate(t)}` : "Coming soon · release date to be announced";
   else if (!t.premium) access = "Available now · free with ads";
   else if (S.premium) access = "Available now · included in your Premium plan";
-  else if (!free.length) access = `Available now · in the ₹${PRICE} Premium plan`;
+  else if (!free.length) access = STORE_APP ? "Available now · Premium" : `Available now · in the ₹${PRICE} Premium plan`;
   else if (free.length === eps.length) access = "Available now · free with ads";
-  else access = `Available now · ${run ? (free.length === 1 ? "episode 1" : `episodes 1–${free.length}`) : `${free.length} of ${eps.length} episodes`} free with ads, the rest in the ₹${PRICE} plan`;
+  else access = `Available now · ${run ? (free.length === 1 ? "episode 1" : `episodes 1–${free.length}`) : `${free.length} of ${eps.length} episodes`} free with ads, the rest ${STORE_APP ? "with Premium" : `in the ₹${PRICE} plan`}`;
   const locks = !S.premium && t.premium && free.length < eps.length;
   const note = concept ? "This is a concept for a fictional film in development. The video is an animated poster teaser, not footage from a film."
     : demo ? "This is a fictional demo series. Each episode is a 5-second animated story card with on-screen text: not filmed, no actors, no dialogue."
     : soon ? "Not out yet. Add it to My List and you'll find it there on release."
+    : locks && STORE_APP ? "If you have Premium, sign in with the same account to watch everything here."
     : locks ? `Get Premium for ₹${PRICE} a year to watch ${t.kind === "movie" ? "this movie" : free.length ? "the rest" : "all episodes"} without ads.` : "";
   const runtime = t.kind === "movie" ? dur(eps[0]?.duration) : eps.length ? `${demo ? `Season ${t.season || 1} · ` : ""}${eps.length} episode${eps.length === 1 ? "" : "s"}` : "";
   const words = (x) => new Set(String(x.genre || "").toLowerCase().split(/[^a-z-]+/).filter((w) => w.length > 2));
@@ -412,7 +414,7 @@ async function vTitle(id) {
       <p class="avail ${soon ? "no" : "yes"}">${esc(access)}</p>
       ${t.synopsis ? `<p class="desc">${esc(t.synopsis)}</p>${t.desc && t.desc !== t.synopsis ? `<p class="tagline">“${esc(t.desc)}”</p>` : ""}` : `<p class="desc">${esc(t.desc || "")}</p>`}
       <div class="row">
-        ${soon ? "" : first && playLabel ? `<button class="btn gold" data-play="${esc(t.id)}" data-ep="${esc(first.id)}" data-nav>▶ ${playLabel}</button>` : !first ? "" : `<a class="btn gold" href="#plans" data-nav>Subscribe to watch · ₹${PRICE}</a>`}
+        ${soon ? "" : first && playLabel ? `<button class="btn gold" data-play="${esc(t.id)}" data-ep="${esc(first.id)}" data-nav>▶ ${playLabel}</button>` : !first ? "" : STORE_APP ? `<a class="btn gold" href="#plans" data-nav>Premium title</a>` : `<a class="btn gold" href="#plans" data-nav>Subscribe to watch · ₹${PRICE}</a>`}
         ${!soon && first && playLabel && t.kind !== "movie" && (t.format !== "v" || isPoetry(t)) ? `<button class="btn ghost" data-play="${esc(t.id)}" data-ep="${esc(first.id)}" data-listen data-nav title="Plays the sound only, so you can lock your phone">🎧 Listen</button>` : ""}
         ${t.trailerUid || t.teaser ? `<button class="btn ${soon ? "gold" : "ghost"}" data-trailer="${esc(t.id)}" data-nav>▶ ${t.trailerUid ? "Trailer" : "Poster teaser"}</button>` : ""}
         <button class="btn ghost" data-listtog="${esc(t.id)}" data-nav>${S.list.includes(t.id) ? "✓ In My List" : "＋ My List"}</button>
@@ -428,7 +430,7 @@ async function vTitle(id) {
           <span class="n">${String(e.n).padStart(2, "0")}</span>
           <span class="thumb" style="${e.thumb ? `background:#000 url('${String(e.thumb).replace(/'/g, "%27")}') center/cover` : posterStyle(t)}"></span>
           <span class="info"><b>${esc(e.name || "Episode " + e.n)}</b>${e.desc ? `<em>${esc(e.desc)}</em>` : ""}<span>${esc(dur(e.duration))}${done ? " · watched" : ep ? " · watching" : ""}</span></span>
-          ${demo ? `<span class="free">Demo</span>` : locked(e) ? `<span class="lock">${t.previewSec ? `${t.previewSec}s free · ` : ""}₹${PRICE} plan</span>` : !S.premium ? `<span class="free">Free · ads</span>` : ""}</button>`;
+          ${demo ? `<span class="free">Demo</span>` : locked(e) ? `<span class="lock">${t.previewSec ? `${t.previewSec}s free · ` : ""}${STORE_APP ? "Premium" : `₹${PRICE} plan`}</span>` : !S.premium ? `<span class="free">Free · ads</span>` : ""}</button>`;
       }).join("")}</div>` : ""}
     </div></div>
     ${like.length ? `<section class="rail"><div class="rail-h"><h2>More like this</h2></div><div class="grid">${like.map((x) => tile(x, "tall")).join("")}</div></section>` : ""}`;
@@ -522,7 +524,7 @@ function vAccount() {
     : `<div class="card hl"><h3>You're browsing as a guest</h3><p class="small">Everything is open to explore and free titles play right away. A free account saves your place in every title, keeps My List on all your devices, and is needed for Premium.</p>
       <div class="row"><a class="btn gold" href="#signup" data-nav>Create free account</a><a class="btn ghost" href="#signin" data-nav>Sign in</a></div></div>`}
     <div class="card"><h3>Plan</h3><div class="kv"><span>Current plan</span><span>${esc(planLine)}</span></div>
-      ${S.premium ? (s?.status === "cancelling" ? `<a class="btn gold" href="#plans" data-nav>Renew</a>` : s?.mode === "subscription" || s?.mode === "test" ? `<button class="btn ghost" data-cancel data-nav>Cancel renewal</button>` : `<a class="btn ghost" href="#plans" data-nav>Renew early</a>`) : `<a class="btn gold" href="#plans" data-nav>Get Premium · ₹${PRICE} a year</a>`}</div>
+      ${S.premium ? (s?.status === "cancelling" ? `<a class="btn gold" href="#plans" data-nav>Renew</a>` : s?.mode === "subscription" || s?.mode === "test" ? `<button class="btn ghost" data-cancel data-nav>Cancel renewal</button>` : `<a class="btn ghost" href="#plans" data-nav>Renew early</a>`) : STORE_APP ? "" : `<a class="btn gold" href="#plans" data-nav>Get Premium · ₹${PRICE} a year</a>`}</div>
     <div class="card"><h3>Age</h3>
       ${adult == null ? `<p class="small">Add your date of birth to watch titles rated A (18+). It can't be changed later.</p>
         <label class="f">Date of birth<input type="date" id="dob" max="${new Date().toISOString().slice(0, 10)}" data-nav></label><button class="btn ghost" data-dob data-nav>Save</button>`

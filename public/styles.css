@@ -348,6 +348,11 @@ body.tv .btn:focus, body.tv .chip:focus, body.tv .ep:focus, body.tv .nav a:focus
 body.tv .tabbar { display: none !important; }
 body.tv .nav, body.tv #me { display: flex !important; }
 body.tv { padding-bottom: 0; }
+/* TVs report a short screen (960×540): keep the banner text clear of the top bar */
+body.tv .hero { height: max(480px, 100vh); }
+body.tv .hcopy { bottom: 64px; gap: 10px; max-width: min(620px, 58vw); }
+body.tv .hero h1 { font-size: clamp(36px, 5.2vw, 64px); }
+body.tv .hero p:not(.meta) { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 
 /* animated poster teasers (5-second silent loops) */

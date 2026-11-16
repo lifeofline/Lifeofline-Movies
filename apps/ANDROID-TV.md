@@ -31,7 +31,7 @@ GitHub → **Actions → Android TV app (Google Play) → Run workflow** → ver
 3. **Test and release → Android TV → Internal testing** → **Create new release** → upload `app-release.aab` → **Save → Review → Start rollout**.
 4. **Grow users → Store presence → Main store listing → Android TV**:
    - **TV banner**: `apps/androidtv/store/tv-banner-1280x720.png`
-   - **TV screenshots** (at least 1, 1920×1080): open the site on a TV or computer and add `?src=tv` to the address, or ask Claude for a set.
+   - **TV screenshots** (1920×1080): the seven in `apps/androidtv/store/screenshots/`.
 5. When internal testing looks good, promote the release to **Production** on the Android TV track. Google reviews TV apps by hand, which usually takes a few days. Typical reasons for a rejection are listed below.
 
 ## 4. What Google's TV review checks (already handled)
