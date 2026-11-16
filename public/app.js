@@ -227,7 +227,7 @@ function planStrip(ready) {
     ${faqHtml(ready, 3)}</section>`;
 }
 // Full-width banner that rotates through up to 6 titles, playing each one's teaser, like the big streaming apps.
-const AC_PROMO = { promo: true, id: "artistcart", title: "ArtistCart", link: "https://lifeofline.com", art: "posters/artistcart-promo.jpg" };
+const AC_PROMO = { promo: true, id: "artistcart", title: "ArtistCart", link: "https://lifeofline.com", art: "posters/artistcart-promo-v2.jpg" };
 function promoSlide(h, i, n) {
   const bg = `background-image:url('${h.art}')`;
   return `<article class="slide promo ${i === 0 ? "on" : ""}" data-i="${i}" aria-roledescription="slide" aria-label="${i + 1} of ${n}: ArtistCart app" ${i ? 'aria-hidden="true"' : ""}>
@@ -236,7 +236,7 @@ function promoSlide(h, i, n) {
       <div class="hshade"></div>
       <div class="hcopy">
         <span class="eyebrow">From Lifeofline · ArtistCart app</span>
-        <h1>Free to work? Get booked.</h1>
+        <h1>Free to work? <em>Get booked.</em></h1>
         <div class="meta"><span class="rating">Free</span><span>Actors · Models · Dancers · Musicians · Crew</span></div>
         <p>The app for India's artists. Show makers you're free, get offers, and find castings, auditions and workshops in your city. Production houses and creators can post what they need.</p>
         <div class="row">
@@ -256,6 +256,7 @@ function heroCarousel(pool) {
     const bg = img ? `background-image:url('${String(img).replace(/'/g, "%27")}')` : posterStyle(h);
     return `<article class="slide ${i === 0 ? "on" : ""}" data-i="${i}" aria-roledescription="slide" aria-label="${i + 1} of ${pool.length}: ${esc(h.title)}" ${i ? 'aria-hidden="true"' : ""}>
       <div class="sbg ${wide ? "wide" : ""}" style="${bg}"></div>
+      ${wide && h.poster ? `<div class="sart mob" style="background:#000 url('${String(h.poster).replace(/'/g, "%27")}') center 18%/cover"></div>` : ""}
       ${wide ? "" : `<div class="sart" style="${posterStyle(h)}">${h.teaser && !calm() ? `<video src="${esc(h.teaser)}" poster="${esc(h.poster || "")}" muted loop playsinline preload="${i === 0 ? "auto" : "none"}" aria-hidden="true"></video>` : ""}${isConcept(h) && h.teaser ? `<span class="artlbl">Animated poster teaser</span>` : ""}</div>`}
       <div class="hshade"></div>
       <div class="hcopy">

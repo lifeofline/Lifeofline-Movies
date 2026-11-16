@@ -96,7 +96,14 @@ body.home .top:not(.solid), body.titlepg .top:not(.solid) { background: linear-g
 .hero.paused .dots button.on.run i { animation-play-state: paused; }
 .dots button.on { background: rgba(255,255,255,.45); }
 @keyframes fill { to { width: 100%; } }
+/* phones: a wide banner would be cropped to a sliver, so wide slides show the title's poster card instead */
+.sart.mob { display: none; }
+.slide.promo h1 em { font-style: normal; background: linear-gradient(90deg, #ffcf5c, #ff8cc8 60%, #b9a6ff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.slide.promo .sbg { filter: blur(26px) brightness(.6) saturate(1.5); }
+.slide.promo .sart { box-shadow: 0 30px 80px rgba(0,0,0,.6), 0 0 90px rgba(255,120,200,.25); }
 @media (max-width: 720px) {
+  .sart.mob { display: block; }
+  .slide .sbg.wide { inset: -40px; filter: blur(30px) brightness(.42) saturate(1.25); transform: scale(1.1); }
   .hero { height: auto; min-height: 0; padding-top: calc(var(--toph, 58px) + 8px); display: grid; }
   .slide { position: relative; grid-area: 1 / 1; display: flex; flex-direction: column; align-items: center; padding: 0 16px 64px; }
   .sart { position: relative; inset: auto; top: auto; bottom: auto; right: auto; width: min(78vw, 340px); }
