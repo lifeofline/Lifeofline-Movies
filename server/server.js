@@ -85,6 +85,26 @@ function freeEpisode(title, ep) {
 }
 const show = (msg, status = 400, extra = {}) => Object.assign(new Error(msg), { show: true, status, extra });
 
+// Episode pictures for a title page: { epId: url }. Kept for an hour per title (the links last 24 hours).
+const thumbCache = new Map();
+async function thumbs({ titleId }) {
+  if (!ID.test(String(titleId || ""))) throw show("bad request");
+  if (!stream.LIVE) return {};
+  const hit = thumbCache.get(titleId); if (hit && hit.until > Date.now()) return hit.map;
+  const t = (await db.doc(`titles/${titleId}`).get()).data();
+  if (!t || !t.published) return {};
+  const key = await stream.signingKey(), map = {};
+  const eps = await db.collection(`titles/${titleId}/episodes`).get();
+  eps.forEach((d) => {
+    const e = d.data(); if (!e.videoUid || String(e.videoUid).startsWith("test_") || !e.duration) return;
+    const first = Array.isArray(e.shers) && e.shers.find((s) => !s.kind && isFinite(s.t));
+    const sec = first ? first.t + 3 : Math.min(20, e.duration * 0.25);
+    map[d.id] = stream.thumbUrl(e.videoUid, Math.min(sec, e.duration - 1), key, t.format === "v" ? 480 : 270);
+  });
+  thumbCache.set(titleId, { map, until: Date.now() + 60 * 60e3 });
+  return map;
+}
+
 async function play(uid, { titleId, epId, trailer }) {
   if (!ID.test(String(titleId || "")) || (epId != null && !ID.test(String(epId)))) throw show("bad request");
   const tSnap = await db.doc(`titles/${titleId}`).get();
@@ -285,7 +305,7 @@ async function supportAlert(caller, { id }) {
 const server = http.createServer(async (req, res) => {
   if (req.method === "OPTIONS") { res.writeHead(204, cors); return res.end(); }
   if (req.method === "GET" && (req.url === "/health" || req.url === "/")) { hourly(); return reply(res, 200, { ok: true, billing: billing.MODE, video: stream.LIVE ? "live" : "test", ai: ai.LIVE ? "on" : "off", price: billing.PRICE }); }
-  const routes = ["/play", "/sub", "/me", "/admin", "/event", "/support", "/pay/webhook"];
+  const routes = ["/play", "/thumbs", "/sub", "/me", "/admin", "/event", "/support", "/pay/webhook"];
   if (req.method !== "POST" || !routes.includes(req.url)) return reply(res, 404, { error: "not found" });
   let raw = "";
   const cap = req.url === "/pay/webhook" ? 200000 : req.url === "/admin" ? 12e6 : 5000; // admin: AI reference pictures
@@ -297,6 +317,7 @@ const server = http.createServer(async (req, res) => {
       const token = (req.headers.authorization || "").replace(/^Bearer /, "");
       let uid = null;
       if (token) uid = (await auth.verifyIdToken(token)).uid;
+      if (req.url === "/thumbs") return reply(res, 200, { result: await thumbs(body) });
       if (req.url === "/play") return reply(res, 200, { result: await play(uid, body) });
       if (req.url === "/event") return reply(res, 200, { result: await recordEvent(uid, body, String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim()) });
       if (!uid) return reply(res, 401, { error: "Sign in first." });

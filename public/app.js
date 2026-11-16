@@ -404,55 +404,107 @@ async function vTitle(id) {
     ["Age rating", `${t.rating || "U"}${t.descriptor ? ` · ${t.descriptor}` : ""}`],
   ].filter(([, v]) => v);
   const playLabel = p ? (t.kind === "movie" ? "Resume" : `Continue ep ${first?.n}`) : demo ? "Play episode 1" : S.premium || !t.premium ? (t.kind === "movie" ? "Play" : "Play episode 1") : free.length ? (t.kind === "movie" ? "Watch free" : "Watch episode 1 free") : "";
-  return `<div class="dback" style="${t.poster ? `background-image:url('${String(t.poster).replace(/'/g, "%27")}')` : posterStyle(t)}" aria-hidden="true"></div>
-  <div class="detail ${t.format === "v" ? "v" : ""}">
-    <div class="dposter" style="${posterStyle(t)}">${t.teaser ? teaserVideo(t) : t.poster ? "" : `<div class="pt">${esc(t.title)}</div>`}${concept && t.teaser ? `<span class="artlbl">Animated poster teaser</span>` : ""}</div>
+  const url = (u) => `url('${String(u).replace(/'/g, "%27")}')`;
+  const wide = t.banner && !demo ? t.banner : "";
+  const vert = t.format === "v";
+  const chs = chapterList(eps);
+  const epRow = (e) => {
+    const ep = S.progress[id]?.epId === e.id ? S.progress[id] : null;
+    const pct = ep && ep.dur ? Math.min(100, Math.round((ep.pos / ep.dur) * 100)) : 0;
+    const done = pct > 90;
+    const badge = demo ? `<span class="free">Demo</span>` : locked(e) ? `<span class="lock">🔒 ${t.previewSec ? `${t.previewSec}s free · ` : ""}${STORE_APP ? "Premium" : `₹${PRICE} plan`}</span>` : !S.premium && t.premium ? `<span class="free">Free</span>` : "";
+    const meta = [dur(e.duration), e.year || "", done ? "Watched" : ep ? "Watching" : ""].filter(Boolean).join(" · ");
+    const art = e.thumb ? `background-image:${url(e.thumb)}` : t.poster ? `background-image:${url(t.poster)}` : posterStyle(t);
+    return `<button class="ep" data-play="${esc(t.id)}" data-ep="${esc(e.id)}" data-epid="${esc(e.id)}"${e.chapter ? ` data-ch="${esc(e.chapter)}"${chs.length > 1 && String(e.chapter) !== String(chapterOf(eps, first)) ? " hidden" : ""}` : ""} data-nav aria-label="Episode ${e.n}: ${esc(e.name || "")}">
+      <span class="ethumb${e.thumb ? " real" : ""}" style="${art}"><span class="eplay" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M8 5v14l11-7z" fill="currentColor"/></svg></span>${e.duration ? `<span class="edur">${esc(dur(e.duration))}</span>` : ""}${pct ? `<span class="eprog"><i style="width:${pct}%"></i></span>` : ""}</span>
+      <span class="einfo"><span class="etop"><span class="en">${e.n}</span>${badge}</span>
+        <b class="et">${esc(e.name || "Episode " + e.n)}</b>
+        ${meta ? `<span class="emeta">${esc(meta)}</span>` : ""}
+        ${e.desc ? `<span class="ed">${esc(e.desc)}</span>` : ""}</span></button>`;
+  };
+  const synopsis = t.synopsis || t.desc || "";
+  return `<section class="dhero ${wide ? "wide" : "tall"}${vert ? " v" : ""}">
+    <div class="dback" style="${wide || t.poster ? `background-image:${url(wide || t.poster)}` : posterStyle(t)}" aria-hidden="true"></div>
+    ${wide ? `<div class="dart" style="background-image:${url(wide)}" aria-hidden="true"></div>`
+      : `<div class="dposter" style="${posterStyle(t)}">${t.teaser ? teaserVideo(t) : t.poster ? "" : `<div class="pt">${esc(t.title)}</div>`}${concept && t.teaser ? `<span class="artlbl">Animated poster teaser</span>` : ""}</div>`}
     <div class="dbody">
-      <span class="eyebrow">${esc(eyebrow(t))}${t.format === "v" ? " · vertical" : ""}</span>
+      <span class="eyebrow">${esc(eyebrow(t))}${vert ? " · vertical" : ""}</span>
       <h1>${esc(t.title)}</h1>
-      <div class="meta"><span class="rating" title="Age rating">${esc(t.rating || "U")}</span><span>${esc(t.genre || "")}</span><span>${esc(t.lang || "")}</span>${runtime ? `<span>${esc(runtime)}</span>` : ""}</div>
+      <div class="meta"><span class="rating" title="Age rating">${esc(t.rating || "U")}</span>${t.year ? `<span>${esc(t.year)}</span>` : ""}${runtime ? `<span>${esc(runtime)}</span>` : ""}${chs.length > 1 ? `<span>${chs.length} chapters</span>` : ""}${chs.length > 1 ? "" : `<span>${esc(t.lang || "")}</span>`}</div>
       <p class="avail ${soon ? "no" : "yes"}">${esc(access)}</p>
-      ${t.synopsis ? `<p class="desc">${esc(t.synopsis)}</p>${t.desc && t.desc !== t.synopsis ? `<p class="tagline">“${esc(t.desc)}”</p>` : ""}` : `<p class="desc">${esc(t.desc || "")}</p>`}
-      <div class="row">
-        ${soon ? "" : first && playLabel ? `<button class="btn gold" data-play="${esc(t.id)}" data-ep="${esc(first.id)}" data-nav>▶ ${playLabel}</button>` : !first ? "" : STORE_APP ? `<a class="btn gold" href="#plans" data-nav>Premium title</a>` : `<a class="btn gold" href="#plans" data-nav>Subscribe to watch · ₹${PRICE}</a>`}
-        ${!soon && first && playLabel && t.kind !== "movie" && (t.format !== "v" || isPoetry(t)) ? `<button class="btn ghost" data-play="${esc(t.id)}" data-ep="${esc(first.id)}" data-listen data-nav title="Plays the sound only, so you can lock your phone">🎧 Listen</button>` : ""}
-        ${t.trailerUid || t.teaser ? `<button class="btn ${soon ? "gold" : "ghost"}" data-trailer="${esc(t.id)}" data-nav>▶ ${t.trailerUid ? "Trailer" : "Poster teaser"}</button>` : ""}
-        <button class="btn ghost" data-listtog="${esc(t.id)}" data-nav>${S.list.includes(t.id) ? "✓ In My List" : "＋ My List"}</button>
-        <button class="btn ghost" data-share="${esc(t.id)}" data-nav>Share</button>
+      <div class="row dact">
+        ${soon ? "" : first && playLabel ? `<button class="btn gold big" data-play="${esc(t.id)}" data-ep="${esc(first.id)}" data-nav>▶ ${playLabel}</button>` : !first ? "" : STORE_APP ? `<a class="btn gold big" href="#plans" data-nav>Premium title</a>` : `<a class="btn gold big" href="#plans" data-nav>Subscribe to watch · ₹${PRICE}</a>`}
+        ${t.trailerUid || t.teaser ? `<button class="btn ${soon ? "gold big" : "ghost"}" data-trailer="${esc(t.id)}" data-nav>▶ ${t.trailerUid ? "Trailer" : "Poster teaser"}</button>` : ""}
       </div>
+      <div class="dicons">
+        ${!soon && first && playLabel && t.kind !== "movie" && (!vert || isPoetry(t)) ? `<button class="dico" data-play="${esc(t.id)}" data-ep="${esc(first.id)}" data-listen data-nav title="Plays the sound only, so you can lock your phone"><span aria-hidden="true">🎧</span>Listen</button>` : ""}
+        <button class="dico" data-listtog="${esc(t.id)}" data-nav><span aria-hidden="true">${S.list.includes(t.id) ? "✓" : "＋"}</span>${S.list.includes(t.id) ? "In My List" : "My List"}</button>
+        <button class="dico" data-share="${esc(t.id)}" data-nav><span aria-hidden="true">↗</span>Share</button>
+        ${t.kind !== "movie" && eps.length > 1 ? `<a class="dico" href="#episodes" data-jump="episodes" data-nav><span aria-hidden="true">≡</span>Episodes</a>` : ""}
+      </div>
+      ${synopsis ? `<p class="desc clamp" id="dsyn">${esc(synopsis)}</p><button class="linkish dmore" data-more="dsyn" data-nav>More</button>` : ""}
+      ${t.synopsis && t.desc && t.desc !== t.synopsis ? `<p class="tagline">“${esc(t.desc)}”</p>` : ""}
       ${note ? `<p class="small">${esc(note)}${locks ? ` <a href="#plans">See the plan</a>` : ""}</p>` : ""}
       ${soon && S.admin ? `<p class="small">Admin: ${concept ? "untick “Concept showcase” and add a release date when this becomes a real production. " : ""}Upload the film in <a href="#admin">Admin</a>, then untick “Coming soon”.</p>` : ""}
-      <dl class="facts">${facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>
-      ${t.kind !== "movie" && eps.length ? `<h3>Episodes</h3>${chapterChips(eps, first)}<div class="eps">${eps.map((e) => {
-        const ep = S.progress[id]?.epId === e.id ? S.progress[id] : null;
-        const done = ep && ep.dur && ep.pos / ep.dur > 0.9;
-        return `<button class="ep" data-play="${esc(t.id)}" data-ep="${esc(e.id)}"${e.chapter ? ` data-ch="${esc(e.chapter)}"${String(e.chapter) !== String(chapterOf(eps, first)) ? " hidden" : ""}` : ""} data-nav>
-          <span class="n">${String(e.n).padStart(2, "0")}</span>
-          <span class="thumb" style="${e.thumb ? `background:#000 url('${String(e.thumb).replace(/'/g, "%27")}') center/cover` : posterStyle(t)}"></span>
-          <span class="info"><b>${esc(e.name || "Episode " + e.n)}</b>${e.desc ? `<em>${esc(e.desc)}</em>` : ""}<span>${esc(dur(e.duration))}${done ? " · watched" : ep ? " · watching" : ""}</span></span>
-          ${demo ? `<span class="free">Demo</span>` : locked(e) ? `<span class="lock">${t.previewSec ? `${t.previewSec}s free · ` : ""}${STORE_APP ? "Premium" : `₹${PRICE} plan`}</span>` : !S.premium ? `<span class="free">Free · ads</span>` : ""}</button>`;
-      }).join("")}</div>` : ""}
-    </div></div>
+    </div>
+  </section>
+  ${t.kind !== "movie" && eps.length ? `<section class="deps" id="episodes">
+    <div class="deps-h"><h2>Episodes</h2><span class="small">${eps.length} episode${eps.length === 1 ? "" : "s"}${chs.length > 1 ? ` in ${chs.length} chapters` : ""}</span></div>
+    ${chapterChips(eps, first)}
+    <div class="eps${vert ? " v" : ""}">${eps.map(epRow).join("")}</div>
+  </section>` : ""}
+  <section class="dabout"><h3>About ${esc(t.title)}</h3><dl class="facts">${facts.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl></section>
     ${like.length ? `<section class="rail"><div class="rail-h"><h2>More like this</h2></div><div class="grid">${like.map((x) => tile(x, "tall")).join("")}</div></section>` : ""}`;
 }
 
 // Chapters (folders) inside a series: episodes carry `chapter` (number) and `chapterName`.
 // The title page shows one chip per chapter and lists that chapter's episodes; series without chapters look as before.
 function chapterOf(eps, cur) { return cur?.chapter || eps.find((e) => e.chapter)?.chapter || ""; }
-function chapterChips(eps, cur) {
+function chapterList(eps) {
   const chs = [];
   for (const e of eps) if (e.chapter && !chs.some((c) => String(c.n) === String(e.chapter))) chs.push({ n: e.chapter, name: e.chapterName || `Chapter ${e.chapter}`, count: 0 });
-  if (chs.length < 2) return "";
   for (const e of eps) { const c = chs.find((c) => String(c.n) === String(e.chapter)); if (c) c.count++; }
+  return chs;
+}
+function chapterChips(eps, cur) {
+  const chs = chapterList(eps);
+  if (chs.length < 2) return "";
   const on = String(chapterOf(eps, cur));
   return `<div class="chips chapters" role="tablist" aria-label="Chapters">${chs.map((c) => `<button class="chip${String(c.n) === on ? " on" : ""}" role="tab" aria-selected="${String(c.n) === on}" data-chap="${esc(c.n)}" data-nav>${esc(c.n)}. ${esc(c.name)} <span class="small">· ${c.count}</span></button>`).join("")}</div>`;
 }
 document.addEventListener("click", (e) => {
   const b = e.target.closest("[data-chap]"); if (!b) return;
-  const box = b.closest(".dbody") || document;
+  const box = b.closest(".deps") || document;
   box.querySelectorAll("[data-chap]").forEach((x) => { const on = x === b; x.classList.toggle("on", on); x.setAttribute("aria-selected", on); });
   box.querySelectorAll(".eps .ep[data-ch]").forEach((x) => { x.hidden = x.dataset.ch !== b.dataset.chap; });
+  b.scrollIntoView({ block: "nearest", inline: "center", behavior: "smooth" });
 });
+// Title page: "More" opens the full synopsis; "Episodes" scrolls down to the list (without changing the address).
+document.addEventListener("click", (e) => {
+  const m = e.target.closest("[data-more]");
+  if (m) { const p = document.getElementById(m.dataset.more); if (p) { const open = p.classList.toggle("clamp") === false; m.textContent = open ? "Less" : "More"; } return; }
+  const j = e.target.closest("[data-jump]");
+  if (j) { e.preventDefault(); document.getElementById(j.dataset.jump)?.scrollIntoView({ behavior: "smooth", block: "start" }); }
+});
+// Episode pictures: a frame from each episode's own video, signed by the server (videos only play through signed links).
+async function fillThumbs(id) {
+  if (!api.thumbs) return;
+  const c = S.thumbs?.[id];
+  let map = c && c.until > Date.now() ? c.map : null;
+  if (!map) { try { map = (await api.thumbs(id)) || {}; } catch { return; } (S.thumbs ||= {})[id] = { map, until: Date.now() + 60 * 60e3 }; }
+  if (location.hash.slice(1).split("/")[1] !== id) return;
+  // Pictures load as rows scroll into view (a chapter can have 80 episodes).
+  const io = new IntersectionObserver((ents) => {
+    for (const en of ents) {
+      if (!en.isIntersecting) continue; io.unobserve(en.target);
+      const box = en.target, src = map[box.closest(".ep")?.dataset.epid]; if (!src) continue;
+      const img = new Image(); img.decoding = "async";
+      img.onload = () => { box.style.backgroundImage = `url('${src.replace(/'/g, "%27")}')`; box.classList.add("real"); };
+      img.src = src;
+    }
+  }, { rootMargin: "400px 0px" });
+  document.querySelectorAll(".deps .ep .ethumb:not(.real)").forEach((b) => io.observe(b));
+}
 
 // Plain answers to what people ask before paying. `limit` shows the first few (Home); Plans shows them all.
 function faqHtml(ready, limit = 99) {
@@ -589,6 +641,7 @@ async function route() {
   if (!S.keepScroll) window.scrollTo(0, 0);
   S.keepScroll = false;
   if (S.tv) setTimeout(() => { const f = $("#app [data-nav]"); if (f && !document.activeElement?.closest("#app")) f.focus({ preventScroll: true }); }, 30);
+  if (r === "t") fillThumbs(arg);
   if (r === "search") { const q = $("#q"); q.focus(); q.setSelectionRange(q.value.length, q.value.length); loadSherIndex().catch(() => {}); fillShers(S.q || ""); }
 }
 window.addEventListener("hashchange", () => { if (history.state?.player) return; route(); });

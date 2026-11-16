@@ -140,6 +140,7 @@ export function createFirebaseApi(config, appConfig = {}) {
     },
     reportProblem: (d) => call("/event", { type: "report", ...d }, { needAuth: false }),
     play: (titleId, epId, trailer) => call("/play", { titleId, epId: epId || undefined, trailer: !!trailer }, { needAuth: false }),
+    thumbs: (titleId) => call("/thumbs", { titleId }, { needAuth: false }),
     subStatus: () => call("/sub", { action: "status" }),
     subStart: () => call("/sub", { action: "start" }),
     subVerify: (r) => call("/sub", { action: "verify", ...r }),

@@ -71,6 +71,13 @@ module.exports = function makeStream({ db, env }) {
     return { hls: `${HOST}/${token}/manifest/video.m3u8`, poster: `${HOST}/${token}/thumbnails/thumbnail.jpg?time=8s&height=720`, test: false };
   }
 
+  // Title page: a still from each episode's video (signed, 24 hours). For ghazals the frame is a few seconds into
+  // the first sher, so the picture shows the poet reciting with the line on screen.
+  function thumbUrl(videoUid, sec, key, height = 360) {
+    const token = sign(videoUid, key, 24);
+    return `${HOST}/${token}/thumbnails/thumbnail.jpg?time=${Math.max(1, Math.round(sec))}s&height=${height}`;
+  }
+
   // Admin page: make a resumable (tus) upload the browser sends the file to directly. Large films are fine.
   async function uploadUrl({ size, name }) {
     size = Math.round(Number(size) || 0);
@@ -155,5 +162,5 @@ module.exports = function makeStream({ db, env }) {
     return r.uid;
   }
 
-  return { LIVE, playUrl, uploadUrl, status, sign, protect, previewClip, teaserUpload, teaserReady, usage, SAMPLE_HLS };
+  return { LIVE, playUrl, thumbUrl, signingKey, uploadUrl, status, sign, protect, previewClip, teaserUpload, teaserReady, usage, SAMPLE_HLS };
 };
