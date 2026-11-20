@@ -126,12 +126,15 @@ async function play(uid, { titleId, epId, trailer, portrait }) {
     : (await db.collection(`titles/${titleId}/episodes`).orderBy("n").limit(1).get()).docs[0];
   const ep = eSnap?.data();
   if (!ep || !ep.videoUid) throw show("This episode isn't uploaded yet.", 404);
-  // A phone held upright gets the episode's 9:16 version when it has one (same timeline, captions laid out for portrait).
-  const tall = !!portrait && (t.format || "h") !== "v" && !!ep.videoUidV && !!ep.durationV;
-  const uidV = tall ? ep.videoUidV : ep.videoUid, sfx = tall ? "V" : "";
+  // Episodes can carry a second shape of the same video: a vertical title may add a wide 16:9 version (videoUidW) for
+  // TVs, computers and phones turned sideways; a wide title may add a 9:16 version (videoUidV) for phones held upright.
+  const isV = (t.format || "h") === "v";
+  const sfx = isV ? (!portrait && ep.videoUidW && ep.durationW ? "W" : "") : (portrait && ep.videoUidV && ep.durationV ? "V" : "");
+  const uidV = sfx ? ep["videoUid" + sfx] : ep.videoUid;
+  const shape = sfx === "W" ? "h" : sfx === "V" ? "v" : base.format;
   // Lock the video down the first time it's played (signed links only, our site only).
   if (!ep["protectedAt" + sfx]) { await stream.protect(uidV).then(() => eSnap.ref.set({ ["protectedAt" + sfx]: Date.now() }, { merge: true })).catch((e) => console.error("protect", e.message)); }
-  const info = { ...base, format: tall ? "v" : base.format, ads: base.ads && !admin, epId: eSnap.id, n: ep.n, name: ep.name || "", duration: ep.duration || 0 };
+  const info = { ...base, format: shape, ads: base.ads && !admin, epId: eSnap.id, n: ep.n, name: ep.name || "", duration: ep.duration || 0 };
   if (!freeEpisode(t, ep) && !premium && !admin) {
     const secs = Math.round(Number(t.previewSec) || 0);
     if (!secs) throw show(`This is in the ₹${billing.PRICE} Premium plan.`, 402, { needPlan: true });
