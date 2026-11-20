@@ -28,6 +28,8 @@ const pref = {
   get voice() { try { return localStorage.getItem("lm-voice") === "1"; } catch { return false; } }, set voice(on) { try { localStorage.setItem("lm-voice", on ? "1" : "0"); } catch { /* ignore */ } },
   get shake() { try { return localStorage.getItem("lm-shake") === "1"; } catch { return false; } }, set shake(on) { try { localStorage.setItem("lm-shake", on ? "1" : "0"); } catch { /* ignore */ } },
   get autoplay() { try { return localStorage.getItem("lm-autoplay") !== "0"; } catch { return true; } }, set autoplay(on) { try { localStorage.setItem("lm-autoplay", on ? "1" : "0"); } catch { /* ignore */ } } };
+// A phone held upright (not a tablet, TV or computer): it gets the 9:16 version of an episode when there is one.
+const uprightPhone = () => { try { return matchMedia("(orientation: portrait) and (max-width: 600px) and (pointer: coarse)").matches; } catch { return false; } };
 const loopLabel = (n) => `🔁 Each sher: ${n === 1 ? "once" : n === 2 ? "twice" : n + " times"}`;
 const SLEEP = [["0", "Off"], ["ep", "End of episode"], ["15", "15 min"], ["30", "30 min"], ["60", "1 hour"]];
 const track = (P, type, extra = {}) => { try { P.api.track?.(type, { titleId: P.title.id, epId: P.ep?.id || "", ...extra }); } catch { /* best effort */ } };
@@ -71,7 +73,6 @@ export async function openPlayer(opts) {
       <div class="plyr" id="plyr"></div>
       <div class="pvst" id="pvst" hidden aria-live="polite"><i></i><span id="pvtx">Say “phir se”, “agla” or “ruko”</span></div>
       <div class="ptop"><button class="pic" data-pclose aria-label="Close">${ICON_X}</button><div class="pttl"><span class="pt2"><b id="pname">${esc(title.title)}</b><span class="psubrow"><small id="psub" hidden></small><span class="rating" id="prate">${esc(title.rating || "U")}</span></span></span></div>
-        ${opts.trailer ? "" : `<button class="pbtn pmode" data-pmode aria-label="${listen ? "Watch the video" : "Listen with the screen off"}">${listen ? ICON_TV + "<span>Watch the video</span>" : ICON_HEAD + "<span>Listen</span><small>screen can be off</small>"}</button>`}
         <button class="pbtn pnext" data-pnext id="pnext" hidden aria-label="Next episode">Next<span class="nx-long"> episode</span> ${ICON_NEXT}</button></div>
       <div class="pmid" id="pmid">
         <button class="pic big" data-seek="-10" aria-label="Back 10 seconds">${ICON_BACK}</button>
@@ -87,6 +88,7 @@ export async function openPlayer(opts) {
         <div class="pctl pbtns">
           <button class="pbtn psher" data-psher id="psherb" hidden aria-label="Repeat the last sher">↺ Sher</button>
           <button class="pbtn plist" data-plist id="plist" hidden aria-label="List of shers">☰ Shers</button>
+          ${opts.trailer ? "" : `<button class="pbtn pmode" data-pmode aria-label="${listen ? "Watch the video" : "Listen with the screen off"}">${listen ? ICON_TV + "<span>Watch</span>" : ICON_HEAD + "<span>Listen</span><small>screen can be off</small>"}</button>`}
           <span class="pspace"></span>
           <button class="pbtn pmorebtn" data-pmore id="pmoreb" aria-expanded="false" aria-controls="pmenu" aria-label="More options">⋯ More</button>
           ${listen ? "" : `<button class="pic" data-pfs aria-label="Full screen" id="pfsb">${ICON_FS}</button>`}
@@ -125,7 +127,7 @@ async function start(P, epId, trailer, startAt, skipIntro = false) {
   try {
     r = trailer && P.direct ? { hls: P.direct, ads: false, premium: false, rating: P.title.rating || "U", test: false }
       : local?.src ? { hls: local.src, epId: local.id, n: local.n, name: local.name, ads: false, premium: false, rating: P.title.rating || "U", test: false }
-      : await P.api.play(P.title.id, epId, trailer);
+      : await P.api.play(P.title.id, epId, trailer, !trailer && !P.listen && uprightPhone());
   }
   catch (e) {
     if (P.destroyed) return;
@@ -136,6 +138,8 @@ async function start(P, epId, trailer, startAt, skipIntro = false) {
   }
   if (P.destroyed) return;
   P.res = r; P.trailer = !!trailer;
+  // The server sent the 9:16 version (phone held upright): play it in portrait, filling the phone, no forced landscape.
+  { const tall = !trailer && !P.listen && (P.title.format === "v" || r.format === "v"); P.vertical = tall; $("#pstage", P.ov)?.classList.toggle("v", tall); }
   P.ep = trailer ? null : (P.episodes || []).find((x) => x.id === r.epId) || { id: r.epId, n: r.n, name: r.name };
   // Episode name first (e.g. the ghazal), with the series and episode number underneath.
   const rawName = String(r.name || P.ep?.name || "").trim();
@@ -380,6 +384,7 @@ function wire(P) {
     if (b.hasAttribute("data-pvoice")) { const on = !P.voice; pref.voice = on; voiceOn(P, on); if (on) toast("Voice on. Just say “phir se”, “dobara”, “agla”, “pichla”, “ruko” or “chalao”", 4500); return; }
     if (b.hasAttribute("data-ploop")) { P.loopN = P.loopN >= 3 ? 1 : P.loopN + 1; P.loopLeft = P.loopN - 1; b.textContent = loopLabel(P.loopN); b.setAttribute("aria-pressed", P.loopN > 1); return toast(P.loopN > 1 ? `Each sher plays ${P.loopN} times` : "Each sher plays once", 2200); }
     if (b.hasAttribute("data-plist")) return sherList(P);
+    if (b.dataset.pscript) { try { localStorage.setItem("sherScript", b.dataset.pscript); } catch { /* ignore */ } sherList(P); if (P.listen) showSher(P, P.sherI); return; }
     if (b.dataset.pjump) { layer(P, ""); v.currentTime = Number(b.dataset.pjump); P.loopLeft = P.loopN - 1; if (v.paused) playSafe(P); return; }
     if (b.hasAttribute("data-pfs")) return toggleFullscreen(P);
     if (b.hasAttribute("data-pretry")) return start(P, P.ep?.id || P.epId, P.trailer, Math.floor(v.currentTime || 0));
@@ -533,18 +538,47 @@ function sherTick(P) {
   const end = sh.e ? sh.e + 0.3 : nx ? nx.t - 0.6 : (v.duration || 0) - 0.5;
   if (now >= end && (!nx || now < nx.t)) { P.loopLeft--; v.currentTime = sh.t; }
 }
+// Which script the shers are shown in: हिंदी (Devanagari), اردو (Urdu) or Roman. One video carries all three on screen;
+// this only changes the Shers list and the Listen card. Remembered per viewer; first guess from the language/time zone.
+const SCRIPTS = [["hi", "हिंदी"], ["ur", "اردو"], ["ro", "Roman"]];
+function sherScript() {
+  try { const v = localStorage.getItem("sherScript"); if (SCRIPTS.some(([k]) => k === v)) return v; } catch { /* ignore */ }
+  const tz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch { return ""; } })();
+  const langs = (navigator.languages || [navigator.language || ""]).join(" ").toLowerCase();
+  if (/\bur\b|ur-/.test(langs) || tz === "Asia/Karachi") return "ur";
+  if (/\bhi\b|hi-/.test(langs) || tz === "Asia/Kolkata" || tz === "Asia/Calcutta") return "hi";
+  return "ro";
+}
+let urduFont = false;
+function loadUrduFont() { // only when someone picks Urdu
+  if (urduFont) return; urduFont = true;
+  const l = document.createElement("link"); l.rel = "stylesheet"; l.href = "https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;600&display=swap"; document.head.append(l);
+}
+const sherText = (x, sc) => (sc === "ur" && x.ur) || (sc === "ro" && x.ro) || x.text || "";
+const hasScript = (list, sc) => sc === "hi" || list.some((x) => (sc === "ur" ? x.ur : x.ro));
+const scriptOf = (P) => { const sc = sherScript(); return hasScript(P.shers, sc) ? sc : "hi"; };
+const sherHtml = (t, sc) => `<span class="${sc === "ur" ? "ur" : ""}" ${sc === "ur" ? 'dir="rtl" lang="ur"' : ""}>${esc(t).replace(/\n/g, "<br>")}</span>`;
 function showSher(P, i) {
   const box = $("#lsher", P.ov); if (!box) return;
   const sh = i >= 0 ? P.shers[i] : null;
   box.hidden = !sh;
-  if (sh) box.innerHTML = `<p>${esc(sh.text).replace(/\n/g, "<br>")}</p>${sh.en ? `<small>${esc(sh.en).replace(/\n/g, "<br>")}</small>` : ""}<span class="lsn">Sher ${i + 1} of ${P.shers.length}</span>`;
+  if (!sh) return;
+  const sc = scriptOf(P); if (sc === "ur") loadUrduFont();
+  box.innerHTML = `<p>${sherHtml(sherText(sh, sc), sc)}</p>${sh.en ? `<small>${esc(sh.en).replace(/\n/g, "<br>")}</small>` : ""}<span class="lsn">Sher ${i + 1} of ${P.shers.length}</span>`;
 }
 function sherList(P) {
   const parts = !P.shers.length && P.parts.length, list = parts ? P.parts : P.shers;
   const cur = sherIndex(list, P.video.currentTime);
-  layer(P, `<div class="pcard plistc"><div class="plbox"><span class="eyebrow">${parts ? "Letters and stories in this episode" : "Shers in this ghazal"}</span>
-    <div class="shl">${list.map((x, i) => `<button class="shr ${i === cur ? "on" : ""}" data-pjump="${x.t}"><span class="tm">${fmt(x.t)}</span><span class="tx">${esc(x.text || `Sher ${i + 1}`).replace(/\n/g, "<br>")}</span></button>`).join("")}</div>
-    <div class="row"><button class="btn ghost" data-plclose>Back to the player</button></div></div></div>`);
+  const avail = parts ? [] : SCRIPTS.filter(([k]) => hasScript(list, k)), sc = parts ? "hi" : scriptOf(P);
+  if (sc === "ur") loadUrduFont();
+  // A sheet over the lower part of the screen: the video keeps playing and stays in view above it.
+  layer(P, `<div class="plsheet" role="dialog" aria-label="${parts ? "Letters and stories" : "Shers"}"><div class="plbox">
+    <div class="plhead"><span class="eyebrow">${parts ? "Letters and stories in this episode" : "Shers in this ghazal"}</span>
+      <button class="pic plx" data-plclose aria-label="Close the list">${ICON_X}</button>
+      ${avail.length > 1 ? `<div class="plsc" role="group" aria-label="Script">${avail.map(([k, l]) => `<button class="${k === sc ? "on" : ""} ${k === "ur" ? "ur" : ""}" data-pscript="${k}" aria-pressed="${k === sc}">${l}</button>`).join("")}</div>` : ""}</div>
+    <div class="shl">${list.map((x, i) => `<button class="shr ${i === cur ? "on" : ""}" data-pjump="${x.t}"><span class="tm">${fmt(x.t)}</span><span class="tx">${sherHtml(sherText(x, sc) || `Sher ${i + 1}`, sc)}${x.en ? `<small>${esc(x.en).replace(/\n/g, "<br>")}</small>` : ""}</span></button>`).join("")}</div>
+  </div></div>`);
+  $(".shr.on", P.ov)?.scrollIntoView({ block: "center" });
 }
 
 // ---- Voice commands -----------------------------------------------------------------------------------

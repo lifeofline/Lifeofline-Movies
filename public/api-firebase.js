@@ -139,7 +139,7 @@ export function createFirebaseApi(config, appConfig = {}) {
       fetch(base + "/event", { method: "POST", headers: { "Content-Type": "text/plain" }, body, keepalive: true }).catch(() => {});
     },
     reportProblem: (d) => call("/event", { type: "report", ...d }, { needAuth: false }),
-    play: (titleId, epId, trailer) => call("/play", { titleId, epId: epId || undefined, trailer: !!trailer }, { needAuth: false }),
+    play: (titleId, epId, trailer, portrait) => call("/play", { titleId, epId: epId || undefined, trailer: !!trailer, portrait: !!portrait }, { needAuth: false }),
     thumbs: (titleId) => call("/thumbs", { titleId }, { needAuth: false }),
     subStatus: () => call("/sub", { action: "status" }),
     subStart: () => call("/sub", { action: "start" }),

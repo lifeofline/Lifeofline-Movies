@@ -748,3 +748,28 @@ html { overflow-x: clip; }
 .vstip { margin: 0; color: var(--muted); font-size: 13px; }
 .vsbox .row { display: flex; gap: 10px; margin-top: 8px; }
 @media (prefers-reduced-motion: reduce) { .spin, .vsmic.on, .vsmic.busy { animation: none; } }
+
+/* Shers list as a sheet: the video keeps playing in view (bottom on phones held upright, right side on wide screens) */
+.plyr:has(> .plsheet) { pointer-events: none; }
+.pov.has-layer:has(.plsheet) .pmid { display: none; }
+.plsheet { pointer-events: auto; position: absolute; left: 0; right: 0; bottom: 0; max-height: 58%; display: flex; background: rgba(15,11,22,.95); border-radius: 18px 18px 0 0; padding: 12px max(14px, env(safe-area-inset-left, 0px)) calc(12px + env(safe-area-inset-bottom, 0px)) max(14px, env(safe-area-inset-right, 0px)); box-shadow: 0 -10px 30px rgba(0,0,0,.5); }
+@media (min-aspect-ratio: 1/1) { .plsheet { left: auto; top: 0; width: min(440px, 44%); max-height: none; border-radius: 18px 0 0 18px; padding-top: calc(16px + env(safe-area-inset-top, 0px)); } }
+.plsheet .plbox { width: 100%; display: grid; grid-template-rows: auto 1fr; gap: 8px; min-height: 0; }
+.plsheet .shl { margin: 0; }
+.plhead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.plhead .plx { margin-left: auto; width: 36px; height: 36px; }
+.plhead .plsc { flex-basis: 100%; justify-content: center; width: max-content; margin-inline: auto; }
+.plsc { display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px; background: rgba(255,255,255,.08); }
+.plsc button { border: 0; background: none; color: #fff; font: inherit; font-size: 14px; padding: 6px 12px; border-radius: 999px; cursor: pointer; }
+.plsc button.on { background: var(--gold); color: #2a1a02; font-weight: 700; }
+.plsc button.ur { font-family: "Noto Nastaliq Urdu", serif; padding-block: 2px; }
+.shr .tx small { display: block; margin-top: 4px; color: rgba(255,255,255,.62); font-size: 13px; line-height: 1.4; }
+.shr .tx .ur, .lsher .ur { display: block; font-family: "Noto Nastaliq Urdu", serif; font-size: 1.05em; line-height: 2.1; text-align: right; }
+
+/* Listen sits in the bottom bar with Sher / Shers / More, not over the picture */
+.pbtns .pmode { background: rgba(20,15,28,.92); border: 1.5px solid var(--gold); color: #fff; gap: 6px; }
+.pbtns .pmode svg { color: var(--gold); width: 18px; height: 18px; }
+.pbtns .pmode span { font-weight: 700; }
+.pbtns .pmode small { color: var(--gold); font-size: 11px; font-weight: 600; }
+@media (max-width: 640px) { .pbtns .pmode small { display: none; } }
+@media (max-width: 400px) { .pctl.pbtns .pbtn { padding: 8px 9px; font-size: 12.5px; } .pctl.pbtns { gap: 6px; } }
