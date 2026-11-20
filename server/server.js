@@ -224,6 +224,23 @@ async function admin(uid, body) {
   if (action === "teaserUpload") return stream.teaserUpload(body);
   if (action === "teaserReady") return stream.teaserReady(String(body.uid || ""));
   if (action === "storage") return stream.usage();
+  if (action === "dropOldVideo") { // after an episode's video was replaced: delete the previous one from Stream
+    const ref = db.doc(`titles/${String(body.titleId || "")}/episodes/${String(body.epId || "")}`);
+    const ep = (await ref.get()).data();
+    if (!ep) throw show("No such episode.", 404);
+    const old = [ep.videoUidPrev, ep.previewUidPrev].filter((u) => /^[a-f0-9]{32}$/.test(String(u || "")));
+    const inUse = new Set([ep.videoUid, ep.videoUidW, ep.videoUidV, ep.previewUid, ep.previewUidW, ep.previewUidV].filter(Boolean));
+    const gone = [];
+    for (const u of old) {
+      if (inUse.has(u)) continue;
+      const elsewhere = await Promise.all(["videoUid", "videoUidW", "videoUidV"].map((f) => db.collectionGroup("episodes").where(f, "==", u).limit(1).get()));
+      if (elsewhere.some((q) => !q.empty)) continue; // still used by another episode: keep it
+      await stream.remove(u).catch((e) => { if (!/not found|404/i.test(e.message)) throw e; });
+      gone.push(u);
+    }
+    await ref.set({ videoUidPrev: null, previewUidPrev: null, oldDroppedAt: Date.now() }, { merge: true });
+    return { deleted: gone.length };
+  }
   if (action === "grant") { // give someone free Premium (cast, crew, testers)
     const days = Math.min(366, Math.max(1, Math.round(Number(body.days) || 30)));
     let u; try { u = await auth.getUserByEmail(String(body.email || "").trim()); } catch { throw show("No account uses that email. Ask them to sign up first.", 404); }
