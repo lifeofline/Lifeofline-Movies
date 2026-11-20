@@ -233,7 +233,7 @@ async function admin(uid, body) {
     const gone = [];
     for (const u of old) {
       if (inUse.has(u)) continue;
-      const elsewhere = await Promise.all(["videoUid", "videoUidW", "videoUidV"].map((f) => db.collectionGroup("episodes").where(f, "==", u).limit(1).get()));
+      const elsewhere = await Promise.all(["videoUid", "videoUidW", "videoUidV"].map((f) => ref.parent.where(f, "==", u).limit(1).get()));
       if (elsewhere.some((q) => !q.empty)) continue; // still used by another episode: keep it
       await stream.remove(u).catch((e) => { if (!/not found|404/i.test(e.message)) throw e; });
       gone.push(u);
