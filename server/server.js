@@ -105,7 +105,7 @@ async function thumbs({ titleId }) {
   return map;
 }
 
-async function play(uid, { titleId, epId, trailer }) {
+async function play(uid, { titleId, epId, trailer, portrait }) {
   if (!ID.test(String(titleId || "")) || (epId != null && !ID.test(String(epId)))) throw show("bad request");
   const tSnap = await db.doc(`titles/${titleId}`).get();
   const t = tSnap.data();
@@ -126,23 +126,26 @@ async function play(uid, { titleId, epId, trailer }) {
     : (await db.collection(`titles/${titleId}/episodes`).orderBy("n").limit(1).get()).docs[0];
   const ep = eSnap?.data();
   if (!ep || !ep.videoUid) throw show("This episode isn't uploaded yet.", 404);
+  // A phone held upright gets the episode's 9:16 version when it has one (same timeline, captions laid out for portrait).
+  const tall = !!portrait && (t.format || "h") !== "v" && !!ep.videoUidV && !!ep.durationV;
+  const uidV = tall ? ep.videoUidV : ep.videoUid, sfx = tall ? "V" : "";
   // Lock the video down the first time it's played (signed links only, our site only).
-  if (!ep.protectedAt) { await stream.protect(ep.videoUid).then(() => eSnap.ref.set({ protectedAt: Date.now() }, { merge: true })).catch((e) => console.error("protect", e.message)); }
-  const info = { ...base, ads: base.ads && !admin, epId: eSnap.id, n: ep.n, name: ep.name || "", duration: ep.duration || 0 };
+  if (!ep["protectedAt" + sfx]) { await stream.protect(uidV).then(() => eSnap.ref.set({ ["protectedAt" + sfx]: Date.now() }, { merge: true })).catch((e) => console.error("protect", e.message)); }
+  const info = { ...base, format: tall ? "v" : base.format, ads: base.ads && !admin, epId: eSnap.id, n: ep.n, name: ep.name || "", duration: ep.duration || 0 };
   if (!freeEpisode(t, ep) && !premium && !admin) {
     const secs = Math.round(Number(t.previewSec) || 0);
     if (!secs) throw show(`This is in the ₹${billing.PRICE} Premium plan.`, 402, { needPlan: true });
     // A free preview: a separate short clip, made once per episode. The full video's link never leaves the server.
-    let pv = ep.previewSec === secs ? ep.previewUid : "";
+    let pv = ep["previewSec" + sfx] === secs ? ep["previewUid" + sfx] : "";
     if (!pv) {
-      pv = await stream.previewClip(ep.videoUid, secs).catch((e) => { console.error("preview clip", e.message); return ""; });
-      if (pv) await eSnap.ref.set({ previewUid: pv, previewSec: secs }, { merge: true });
+      pv = await stream.previewClip(uidV, secs).catch((e) => { console.error("preview clip", e.message); return ""; });
+      if (pv) await eSnap.ref.set({ ["previewUid" + sfx]: pv, ["previewSec" + sfx]: secs }, { merge: true });
     }
     const ready = pv && (await stream.status(pv).then((x) => x.ready).catch(() => false));
     if (!ready) throw show(`This is in the ₹${billing.PRICE} Premium plan.`, 402, { needPlan: true });
     return { ...info, preview: secs, ...(await stream.playUrl(pv)) };
   }
-  return { ...info, ...(await stream.playUrl(ep.videoUid)) };
+  return { ...info, ...(await stream.playUrl(uidV)) };
 }
 
 /* ---------- the signed-in person ---------- */
