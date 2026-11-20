@@ -162,5 +162,13 @@ module.exports = function makeStream({ db, env }) {
     return r.uid;
   }
 
-  return { LIVE, playUrl, thumbUrl, signingKey, uploadUrl, status, sign, protect, previewClip, teaserUpload, teaserReady, usage, SAMPLE_HLS };
+  // Deletes a video from Stream for good (used when an episode's video has been replaced by a new version).
+  async function remove(uid) {
+    if (!LIVE || String(uid).startsWith("test_")) return true;
+    if (!/^[a-f0-9]{32}$/.test(String(uid))) throw show("That isn't a Cloudflare video id.");
+    await cf("DELETE", "/" + uid);
+    return true;
+  }
+
+  return { LIVE, playUrl, thumbUrl, signingKey, uploadUrl, status, sign, protect, previewClip, teaserUpload, teaserReady, usage, remove, SAMPLE_HLS };
 };
