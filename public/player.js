@@ -28,7 +28,7 @@ const pref = {
   get voice() { try { return localStorage.getItem("lm-voice") === "1"; } catch { return false; } }, set voice(on) { try { localStorage.setItem("lm-voice", on ? "1" : "0"); } catch { /* ignore */ } },
   get shake() { try { return localStorage.getItem("lm-shake") === "1"; } catch { return false; } }, set shake(on) { try { localStorage.setItem("lm-shake", on ? "1" : "0"); } catch { /* ignore */ } },
   get autoplay() { try { return localStorage.getItem("lm-autoplay") !== "0"; } catch { return true; } }, set autoplay(on) { try { localStorage.setItem("lm-autoplay", on ? "1" : "0"); } catch { /* ignore */ } } };
-// A phone held upright (not a tablet, TV or computer): it gets the 9:16 version of an episode when there is one.
+// A phone held upright (not a tablet, TV or computer): it gets the 9:16 version of an episode, others the 16:9 one when there is one.
 const uprightPhone = () => { try { return matchMedia("(orientation: portrait) and (max-width: 600px) and (pointer: coarse)").matches; } catch { return false; } };
 const loopLabel = (n) => `🔁 Each sher: ${n === 1 ? "once" : n === 2 ? "twice" : n + " times"}`;
 const SLEEP = [["0", "Off"], ["ep", "End of episode"], ["15", "15 min"], ["30", "30 min"], ["60", "1 hour"]];
@@ -138,8 +138,9 @@ async function start(P, epId, trailer, startAt, skipIntro = false) {
   }
   if (P.destroyed) return;
   P.res = r; P.trailer = !!trailer;
-  // The server sent the 9:16 version (phone held upright): play it in portrait, filling the phone, no forced landscape.
-  { const tall = !trailer && !P.listen && (P.title.format === "v" || r.format === "v"); P.vertical = tall; $("#pstage", P.ov)?.classList.toggle("v", tall); }
+  // The server picks the shape for this screen: 9:16 for a phone held upright (fills the phone, no forced landscape),
+  // 16:9 for TVs, computers and phones turned sideways when the episode has a wide version.
+  { const tall = !trailer && !P.listen && (r.format ? r.format === "v" : P.title.format === "v"); P.vertical = tall; $("#pstage", P.ov)?.classList.toggle("v", tall); }
   P.ep = trailer ? null : (P.episodes || []).find((x) => x.id === r.epId) || { id: r.epId, n: r.n, name: r.name };
   // Episode name first (e.g. the ghazal), with the series and episode number underneath.
   const rawName = String(r.name || P.ep?.name || "").trim();
