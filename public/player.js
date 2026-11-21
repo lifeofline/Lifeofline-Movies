@@ -31,7 +31,11 @@ const pref = {
   get autoplay() { try { return localStorage.getItem("lm-autoplay") !== "0"; } catch { return true; } }, set autoplay(on) { try { localStorage.setItem("lm-autoplay", on ? "1" : "0"); } catch { /* ignore */ } } };
 // A phone held upright (not a tablet, TV or computer): it gets the 9:16 version of an episode, others the 16:9 one when there is one.
 const uprightPhone = () => { try { return matchMedia("(orientation: portrait) and (max-width: 600px) and (pointer: coarse)").matches; } catch { return false; } };
-// Phones and tablets (not TVs or computers): leaving the app while a video plays carries on as sound, like YouTube.
+// iPhone / iPad: the sound always plays from an <audio> element and the picture is a muted <video> that follows it.
+// Safari stops a <video> as soon as the app goes to the background, but keeps an <audio> going (screen off, other
+// apps), so leaving and coming back never interrupts the sound. Android's Chrome keeps the video's own sound going.
+const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+// Phones and tablets (not TVs or computers).
 const bgListenDevice = () => { try { return !TV_APP && matchMedia("(pointer: coarse)").matches; } catch { return false; } };
 // One <audio> element, unlocked by the viewer's first tap in the player, so the phone lets it start later with the
 // app in the background (iPhone only lets an element play sound on its own after a tap has started it once).
@@ -41,7 +45,7 @@ function unlockBgAudio() {
   if (bgAudio) return;
   const a = document.createElement("audio"); a.preload = "auto"; a.setAttribute("controlslist", "nodownload");
   bgAudio = a;
-  try { a.src = SILENT; const p = a.play(); if (p?.then) p.then(() => a.pause()).catch(() => {}); } catch { /* ignore */ }
+  try { a.src = SILENT; const p = a.play(); if (p?.then) p.then(() => { if (a.src === SILENT) a.pause(); }).catch(() => {}); } catch { /* ignore */ }
 }
 const loopLabel = (n) => `🔁 Each sher: ${n === 1 ? "once" : n === 2 ? "twice" : n + " times"}`;
 const SLEEP = [["0", "Off"], ["ep", "End of episode"], ["15", "15 min"], ["30", "30 min"], ["60", "1 hour"]];
@@ -80,6 +84,7 @@ export async function openPlayer(opts) {
         <div class="lnow"><span class="eyebrow">Listening</span><b id="lname">${esc(title.title)}</b><span id="lep" class="lep"></span>
         <div class="lsher" id="lsher" hidden></div>
         <span class="lhint">You can lock your phone or open another app. It keeps playing${opts.episodes?.length > 1 ? " and moves on to the next episode by itself" : ""}.</span></div></div>`
+      : IOS && !opts.trailer ? `<video id="pvv" muted playsinline webkit-playsinline preload="auto" x-webkit-airplay="deny" controlslist="nodownload noremoteplayback noplaybackrate" disablepictureinpicture disableremoteplayback></video><audio id="pv" preload="auto" controlslist="nodownload"></audio>`
       : `<video id="pv" playsinline webkit-playsinline preload="auto" x-webkit-airplay="deny" controlslist="nodownload noremoteplayback noplaybackrate" disablepictureinpicture disableremoteplayback></video>`}
       <div class="ppv" id="ppv" hidden></div>
       <div class="pseekfx l" id="pfxl" aria-hidden="true">${ICON_BACK}<span>10 sec</span></div><div class="pseekfx r" id="pfxr" aria-hidden="true">${ICON_FWD}<span>10 sec</span></div>
@@ -119,8 +124,9 @@ export async function openPlayer(opts) {
     </div>`;
   document.body.append(ov);
   document.body.classList.add("playing");
-  if (listen && bgAudio) { const old = $("#pv", ov); bgAudio.id = "pv"; try { bgAudio.pause(); bgAudio.removeAttribute("src"); } catch { /* ignore */ } old.replaceWith(bgAudio); }
-  const P = current = { ...opts, ov, listen, vertical, poetry: isPoetry(title) && !opts.trailer, shers: [], sherI: -1, loopN: opts.loopN || 1, loopLeft: 0, video: $("#pv", ov), sleepAt: 0, sleepEp: false, hls: null, ep: null, res: null, midDone: false, phase: "load", saveT: 0, idleT: 0, destroyed: false };
+  if (IOS && !opts.trailer) unlockBgAudio();
+  if (bgAudio && $("#pv", ov)?.tagName === "AUDIO") { const old = $("#pv", ov); bgAudio.id = "pv"; try { bgAudio.pause(); bgAudio.removeAttribute("src"); } catch { /* ignore */ } old.replaceWith(bgAudio); }
+  const P = current = { ...opts, ov, listen, vertical, poetry: isPoetry(title) && !opts.trailer, shers: [], sherI: -1, loopN: opts.loopN || 1, loopLeft: 0, video: $("#pv", ov), vis: $("#pvv", ov), sleepAt: 0, sleepEp: false, hls: null, ep: null, res: null, midDone: false, phase: "load", saveT: 0, idleT: 0, destroyed: false };
   if (!had) history.pushState({ player: 1 }, "");
   wire(P);
   if (bgListenDevice()) ov.addEventListener("pointerdown", unlockBgAudio, { once: true, capture: true });
@@ -181,7 +187,7 @@ async function start(P, epId, trailer, startAt, skipIntro = false) {
     const epLine = !trailer && P.title.kind !== "movie" ? `Ep ${r.n}${r.name && !/^Episode \d+$/.test(r.name) ? ": " + r.name : ""}` : "";
     try { navigator.mediaSession.metadata = new MediaMetadata({ title: epLine || P.title.title, artist: epLine ? P.title.title : "Lifeofline Movies", album: "Lifeofline Movies", artwork: P.title.poster ? [{ src: P.title.poster, sizes: "512x512" }] : [{ src: "icon-512.png", sizes: "512x512", type: "image/png" }] }); } catch { /* ignore */ }
   }
-  if (r.poster && !P.listen) P.video.poster = r.poster;
+  if (r.poster && !P.listen) (P.vis || P.video).poster = r.poster;
   // Free-preview badge.
   const pv = $("#ppv", P.ov); pv.hidden = !r.preview; pv.textContent = r.preview ? `Free preview · ${r.preview} seconds` : "";
 
@@ -213,16 +219,34 @@ async function start(P, epId, trailer, startAt, skipIntro = false) {
   if (r.test) toast("Demo stream: real videos play once Cloudflare is set up.", 3000);
 }
 
+// The audio-only rendition of a Cloudflare HLS stream (its EXT-X-MEDIA TYPE=AUDIO playlist), so the iPhone's sound
+// element doesn't download the picture a second time. Falls back to the whole stream.
+const AUDIO_SRC = new Map();
+function audioSrc(src) {
+  if (!/\.m3u8(\?|$)/i.test(src)) return Promise.resolve(src);
+  if (!AUDIO_SRC.has(src)) AUDIO_SRC.set(src, (async () => {
+    try {
+      const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 2500);
+      const txt = await (await fetch(src, { signal: ctl.signal })).text(); clearTimeout(t);
+      const m = txt.split("\n").find((l) => /^#EXT-X-MEDIA:.*TYPE=AUDIO/.test(l) && /URI="/.test(l));
+      const uri = m && m.match(/URI="([^"]+)"/)[1];
+      return uri ? new URL(uri, src).href : src;
+    } catch { return src; }
+  })());
+  return AUDIO_SRC.get(src);
+}
+
 async function attach(P, src) {
   const v = P.video;
   if (P.hls) { P.hls.destroy(); P.hls = null; }
   const q = $("#pq", P.ov); q.innerHTML = `<option value="-1">Quality: Auto</option>`; q.hidden = true;
-  if (/\.mp4(\?|$)/i.test(src)) { v.src = src; return; }
+  if (/\.mp4(\?|$)/i.test(src)) { if (P.vis) P.vis.src = src; v.src = src; return; }
   const native = !!v.canPlayType("application/vnd.apple.mpegurl");
   // Listening on an iPhone or iPad: Safari's own HLS keeps playing with the screen locked and moves on to the next
   // episode in the background; hls.js there runs on Media Source, which the phone stops feeding once the screen is off.
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
-  if (P.listen && native && ios) { v.src = src; return; }
+  if (P.listen && native && ios) { v.src = await audioSrc(src); return; }
+  if (P.vis) { P.vis.src = src; v.src = await audioSrc(src); return; }
   try { await loadScript(HLS_JS); } catch { if (native) { v.src = src; return; } throw new Error("The video player didn't load. Check your connection and try again."); }
   if (!window.Hls?.isSupported()) {
     if (native) { v.src = src; return; }
@@ -263,6 +287,18 @@ async function adBreak(P, label) {
   if (wasPlaying) playSafe(P);
 }
 
+function syncVis(P, hard = false) {
+  // The sound never waits for the picture: the picture jumps to catch up, and while it is still loading or seeking
+  // it is left alone (seeking it again would only restart the wait).
+  const a = P.video, vv = P.vis; if (!vv || P.destroyed) return;
+  if (document.hidden) { if (!vv.paused) vv.pause(); return; }
+  try {
+    const busy = vv.seeking || vv.readyState < 3;
+    if ((hard || Math.abs((vv.currentTime || 0) - (a.currentTime || 0)) > 0.4) && (!busy || hard)) vv.currentTime = a.currentTime + (a.paused ? 0 : 0.15);
+    if (!a.paused && vv.paused) vv.play().catch(() => {});
+    else if (a.paused && !vv.paused) vv.pause();
+  } catch { /* not ready yet */ }
+}
 function playSafe(P) { const p = P.video.play(); if (p?.catch) p.catch(() => { $("#ppb", P.ov).innerHTML = ICON_PLAY; }); }
 
 function nextEp(P) {
@@ -335,11 +371,17 @@ function wire(P) {
     if (!P.trailer && !P.completed && d > 60 && v.currentTime / d > 0.9) { P.completed = true; track(P, "complete"); }
     // Listening with the screen off: fetch the next episode's link early, so when this one ends the next starts at once.
     // (A locked phone pauses the page as soon as the sound stops; any wait in between leaves it silent until unlocked.)
-    if (P.listen && d && d - v.currentTime < 60 && !P.pre && pref.autoplay && !P.res?.preview) {
+    if ((P.listen || P.vis) && d && d - v.currentTime < 60 && !P.pre && pref.autoplay && !P.res?.preview) {
       const nx = nextEp(P);
-      if (nx && (freeEpisode(P.title, nx) || P.res?.premium || P.title.previewSec)) { P.pre = { id: nx.id, p: P.api.play(P.title.id, nx.id, false, false) }; P.pre.p.catch(() => {}); }
+      if (nx && (freeEpisode(P.title, nx) || P.res?.premium || P.title.previewSec)) { P.pre = { id: nx.id, p: P.api.play(P.title.id, nx.id, false, false) }; P.pre.p.then((r) => { if (IOS && r?.hls) audioSrc(r.hls); }).catch(() => {}); }
     }
   });
+  if (P.vis) {
+    ["play", "pause", "seeked", "playing"].forEach((t) => v.addEventListener(t, () => syncVis(P, t === "seeked")));
+    v.addEventListener("timeupdate", () => syncVis(P));
+    v.addEventListener("emptied", () => { try { P.vis.pause(); } catch { /* ignore */ } });
+    P.vis.addEventListener("playing", () => syncVis(P));
+  }
   v.addEventListener("progress", () => { try { const d = v.duration; if (d && v.buffered.length) buf.style.width = (v.buffered.end(v.buffered.length - 1) / d) * 100 + "%"; } catch { /* ignore */ } });
   v.addEventListener("ended", () => {
     if (P.res?.preview) return layer(P, `<div class="pcard"><span class="eyebrow">Preview ended</span><h3>Keep watching ${esc(P.title.title)}</h3><p>${PLAN_LINE}</p><div class="row"><button class="btn gold" data-pplan>${STORE_APP ? PLAN_BTN : "Unlock with the ₹999 yearly plan"}</button><button class="btn ghost" data-pclose>Close</button></div></div>`);
@@ -367,10 +409,8 @@ function wire(P) {
     if (document.hidden && P.countT && P.phase === "play" && P.video.ended) { clearInterval(P.countT); P.countT = 0; goNext(P, nextEp(P), true); }
     // Back on screen after the phone refused to start the next episode on its own: start it now.
     else if (!document.hidden && P.autoNext && P.phase === "play" && P.video.paused) playSafe(P);
-    // Swiped away or locked while a video plays on a phone: carry on as sound at the same second (like YouTube).
-    if (document.hidden && !P.listen && !P.trailer && bgListenDevice() && P.phase === "play" && (!P.video.paused || Date.now() - (P.pausedAt || 0) < 1500) && !P.video.ended && P.ep) return switchMode(P, true);
-    // Back in the app after that: the picture comes back where the sound got to.
-    if (!document.hidden && P.listen && P.bgAuto && P.phase === "play" && !P.video.paused) return switchMode(P, true);
+    // iPhone: back in the app, the picture catches up with the sound that kept playing.
+    if (!document.hidden && P.vis) syncVis(P, true);
   };
   v.addEventListener("playing", () => { P.autoNext = false; });
   document.addEventListener("visibilitychange", P.onVis);
@@ -394,7 +434,7 @@ function wire(P) {
 
   // Tapping the picture: one tap shows/hides the controls; a quick double tap on the left or right third skips 10 seconds.
   let lastTap = 0, tapT = 0;
-  const onPicture = (e) => e.target === v || e.target.id === "pstage" || e.target.id === "pmid";
+  const onPicture = (e) => e.target === v || (P.vis && e.target === P.vis) || e.target.id === "pstage" || e.target.id === "pmid";
   ov.addEventListener("click", (e) => {
     const b = e.target.closest("button, [data-pclose], a, select, label");
     const menu = $("#pmenu", ov);
@@ -504,6 +544,7 @@ function teardown(fromCode) {
   try { screen.orientation?.unlock?.(); } catch { /* not supported */ }
   if ("mediaSession" in navigator) { try { navigator.mediaSession.metadata = null; ["play", "pause", "seekbackward", "seekforward", "nexttrack", "previoustrack", "seekto"].forEach((a) => navigator.mediaSession.setActionHandler(a, null)); } catch { /* ignore */ } }
   try { P.video.pause(); P.hls?.destroy(); P.video.removeAttribute("src"); P.video.load(); } catch { /* ignore */ }
+  try { if (P.vis) { P.vis.pause(); P.vis.removeAttribute("src"); P.vis.load(); } } catch { /* ignore */ }
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   else if (document.webkitFullscreenElement) document.webkitExitFullscreen?.();
   P.ov.remove(); document.body.classList.remove("playing");
@@ -514,7 +555,7 @@ function teardown(fromCode) {
 // Full screen. Android and computers: the whole player, turned sideways for wide titles.
 // iPhone can only make the video itself full screen (Safari's own player; no download or AirPlay there).
 function toggleFullscreen(P) {
-  const ov = P.ov, v = P.video;
+  const ov = P.ov, v = P.vis || P.video;
   if (document.fullscreenElement || document.webkitFullscreenElement) {
     try { screen.orientation?.unlock?.(); } catch { /* ignore */ }
     return (document.exitFullscreen?.() || document.webkitExitFullscreen?.())?.catch?.(() => {});
