@@ -499,13 +499,7 @@ function wire(P) {
     if (b.hasAttribute("data-page")) return after("onNeedAge");
   });
 
-  // Swipe up / down for the next / previous episode on vertical shows.
-  let y0 = null;
-  ov.addEventListener("touchstart", (e) => { if (P.vertical) y0 = e.touches[0].clientY; }, { passive: true });
-  ov.addEventListener("touchend", (e) => {
-    if (y0 == null || P.phase !== "play" || P.seeking) return; const dy = e.changedTouches[0].clientY - y0; y0 = null;
-    if (dy < -80) goNext(P, nextEp(P)); else if (dy > 80) goNext(P, prevEp(P));
-  });
+  // No swipe-to-change-episode: swiping only scrolls (the shers list, the menus). Previous / Next are buttons.
 
   P.onKey = (e) => {
     if (e.target.closest?.("select")) return;
