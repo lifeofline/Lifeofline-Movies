@@ -786,3 +786,9 @@ html { overflow-x: clip; }
 /* Continue watching: the episode they were on, then the time left */
 .tile .cap .cont-ep { display: block; color: var(--fg, #fff); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tile .cap .cont-left { display: block; color: var(--gold); font-size: .92em; }
+
+/* Slow start: a small note over the picture that leaves every control usable */
+.pslow { display: none; position: absolute; z-index: 6; left: 50%; transform: translateX(-50%); top: calc(76px + env(safe-area-inset-top, 0px)); align-items: center; gap: 10px; padding: 8px 8px 8px 14px; border-radius: 999px; background: rgba(20,15,28,.9); border: 1px solid var(--line); color: #fff; font-size: 13px; white-space: nowrap; max-width: calc(100% - 24px); }
+.pov.slow .pslow { display: flex; }
+.pslow .spin { width: 16px; height: 16px; border-width: 2px; }
+@media (max-width: 520px) { .pslow { white-space: normal; font-size: 12px; } }

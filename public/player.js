@@ -89,6 +89,7 @@ export async function openPlayer(opts) {
       <div class="ppv" id="ppv" hidden></div>
       <div class="pseekfx l" id="pfxl" aria-hidden="true">${ICON_BACK}<span>10 sec</span></div><div class="pseekfx r" id="pfxr" aria-hidden="true">${ICON_FWD}<span>10 sec</span></div>
       <div class="plyr" id="plyr"></div>
+      <div class="pslow" role="status"><span class="spin" aria-hidden="true"></span>Slow connection · still loading, it will start by itself<button class="btn sm ghost" data-pretry>Retry</button></div>
       <div class="pvst" id="pvst" hidden aria-live="polite"><i></i><span id="pvtx">Say “phir se”, “agla” or “ruko”</span></div>
       <div class="ptop"><button class="pic" data-pclose aria-label="Close">${ICON_X}</button><div class="pttl"><span class="pt2"><b id="pname">${esc(title.title)}</b><span class="psubrow"><small id="psub" hidden></small><span class="rating" id="prate">${esc(title.rating || "U")}</span></span></span></div></div>
       <div class="pmid" id="pmid">
@@ -140,7 +141,7 @@ export async function openPlayer(opts) {
 function layer(P, html) { const l = $("#plyr", P.ov); l.innerHTML = html; l.hidden = !html; P.ov.classList.toggle("has-layer", !!html); }
 
 async function start(P, epId, trailer, startAt, skipIntro = false) {
-  P.phase = "load"; P.midDone = skipIntro ? !!P.midDone : false; P.completed = false; clearTimeout(P.startT);
+  P.phase = "load"; P.midDone = skipIntro ? !!P.midDone : false; P.completed = false; clearTimeout(P.startT); P.ov.classList.remove("slow");
   layer(P, `<div class="pcard"><span class="spin" aria-label="Loading"></span></div>`);
   let r;
   // A teaser stored with the site (a plain MP4) plays straight away; everything else asks the server for a signed link.
@@ -210,12 +211,18 @@ async function start(P, epId, trailer, startAt, skipIntro = false) {
   // Resume where they stopped (switching between watching and listening resumes at the exact second).
   const exact = skipIntro || P.exactStart; // switching Watch/Listen, or jumping straight to a sher from search
   const resume = startAt && (exact ? startAt > 0 : startAt > 10) ? startAt : 0, room = exact ? 1 : 30;
+  P.lastPos = resume || 0;
   if (resume) P.video.addEventListener("loadedmetadata", () => { if (resume < (P.video.duration || 0) - room) P.video.currentTime = resume; }, { once: true });
   if (resume && P.video.readyState >= 1 && resume < P.video.duration - room) P.video.currentTime = resume;
   playSafe(P);
   // Watchdog: if no picture arrives, say so instead of a black screen.
   clearTimeout(P.startT);
-  P.startT = setTimeout(() => { if (!P.started && P.phase === "play") errCard(P, "This video is taking too long to start.", "Check your internet connection and try again. If it keeps happening, report it and we'll look into it.", "start-timeout"); }, START_TIMEOUT_MS);
+  P.startT = setTimeout(() => {
+    if (P.started || P.phase !== "play") return;
+    // Slow connection: say so without covering the controls, and keep waiting.
+    P.ov.classList.add("slow");
+    P.startT = setTimeout(() => { if (!P.started && P.phase === "play") errCard(P, "This video is taking too long to start.", "Check your internet connection and try again. If it keeps happening, report it and we'll look into it.", "start-timeout"); }, 40000);
+  }, START_TIMEOUT_MS);
   if (r.test) toast("Demo stream: real videos play once Cloudflare is set up.", 3000);
 }
 
@@ -245,8 +252,8 @@ async function attach(P, src) {
   // Listening on an iPhone or iPad: Safari's own HLS keeps playing with the screen locked and moves on to the next
   // episode in the background; hls.js there runs on Media Source, which the phone stops feeding once the screen is off.
   const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
-  if (P.listen && native && ios) { v.src = await audioSrc(src); return; }
-  if (P.vis) { P.vis.src = src; v.src = await audioSrc(src); return; }
+  if (P.listen && native && ios) { const a = await audioSrc(src); if (!P.destroyed) v.src = a; return; }
+  if (P.vis) { const a = await audioSrc(src); if (P.destroyed) return; P.vis.src = src; v.src = a; return; }
   try { await loadScript(HLS_JS); } catch { if (native) { v.src = src; return; } throw new Error("The video player didn't load. Check your connection and try again."); }
   if (!window.Hls?.isSupported()) {
     if (native) { v.src = src; return; }
@@ -348,7 +355,8 @@ function wire(P) {
     }
     P.pausedAt = 0; wakeLock(P, !P.listen); if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "playing"; ppb.innerHTML = ICON_PAUSE; ppb.setAttribute("aria-label", "Pause"); wake(); });
   v.addEventListener("playing", () => {
-    ov.classList.remove("buffering");
+    ov.classList.remove("buffering", "slow");
+    if (P.phase === "error") { layer(P, ""); P.phase = "play"; }
     if (!P.started && P.phase === "play") { P.started = true; clearTimeout(P.startT); track(P, P.trailer ? "teaser" : "start"); }
   });
   v.addEventListener("waiting", () => { if (P.phase === "play") ov.classList.add("buffering"); });
@@ -361,6 +369,7 @@ function wire(P) {
   v.addEventListener("pause", () => { P.pausedAt = Date.now(); wakeLock(P, false); if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused"; ppb.innerHTML = ICON_PLAY; ppb.setAttribute("aria-label", "Play"); ov.classList.remove("idle"); clearTimeout(P.idleT); save(P); });
   v.addEventListener("timeupdate", () => {
     const d = v.duration || 0;
+    if (P.phase === "play" && v.currentTime > 1) P.lastPos = v.currentTime;
     if (!P.seeking) { const pct = d ? (v.currentTime / d) * 100 : 0; fill.style.width = pct + "%"; knob.style.left = pct + "%"; }
     time.textContent = clock(v.currentTime); left.textContent = d ? "-" + clock(Math.max(0, d - v.currentTime)) : "";
     if (P.res?.ads && !P.trailer && d > MIDROLL_MIN_SEC) { cue.hidden = P.midDone; cue.style.left = "50%"; }
@@ -470,7 +479,7 @@ function wire(P) {
     if (b.dataset.pscript) { try { localStorage.setItem("sherScript", b.dataset.pscript); } catch { /* ignore */ } sherList(P); if (P.listen) showSher(P, P.sherI); return; }
     if (b.dataset.pjump) { layer(P, ""); v.currentTime = Number(b.dataset.pjump); P.loopLeft = P.loopN - 1; if (v.paused) playSafe(P); return; }
     if (b.hasAttribute("data-pfs")) return toggleFullscreen(P);
-    if (b.hasAttribute("data-pretry")) return start(P, P.ep?.id || P.epId, P.trailer, Math.floor(v.currentTime || 0));
+    if (b.hasAttribute("data-pretry")) { const at = Math.max(P.lastPos || 0, v.currentTime || 0); return start(P, P.ep?.id || P.epId, P.trailer, at, true); }
     if (b.hasAttribute("data-preport")) {
       b.disabled = true;
       Promise.resolve(P.api.reportProblem?.({ titleId: P.title.id, epId: P.ep?.id || P.epId || "", title: P.title.title, error: P.lastError, ua: navigator.userAgent.slice(0, 200) }))
