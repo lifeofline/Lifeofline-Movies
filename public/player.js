@@ -2,7 +2,7 @@
 // Plays HLS from Cloudflare Stream with hls.js wherever the browser supports it, and the browser's own HLS only where
 // hls.js can't run (iPhone Safari). Newer Chrome also claims native HLS but fails on some streams, so hls.js comes first.
 // Saves where you stopped, reports starts / completions / errors (Admin → Numbers) and never leaves a spinner forever.
-import { $, esc, clock, loadScript, toast } from "./util.js";
+import { $, esc, clock, loadScript, toast, TV_APP } from "./util.js";
 import { freeEpisode } from "./access.js";
 import { STORE_APP } from "./install.js";
 // Google Play / App Store apps (phone and TV) don't sell Premium or show its price.
@@ -30,6 +30,18 @@ const pref = {
   get autoplay() { try { return localStorage.getItem("lm-autoplay") !== "0"; } catch { return true; } }, set autoplay(on) { try { localStorage.setItem("lm-autoplay", on ? "1" : "0"); } catch { /* ignore */ } } };
 // A phone held upright (not a tablet, TV or computer): it gets the 9:16 version of an episode, others the 16:9 one when there is one.
 const uprightPhone = () => { try { return matchMedia("(orientation: portrait) and (max-width: 600px) and (pointer: coarse)").matches; } catch { return false; } };
+// Phones and tablets (not TVs or computers): leaving the app while a video plays carries on as sound, like YouTube.
+const bgListenDevice = () => { try { return !TV_APP && matchMedia("(pointer: coarse)").matches; } catch { return false; } };
+// One <audio> element, unlocked by the viewer's first tap in the player, so the phone lets it start later with the
+// app in the background (iPhone only lets an element play sound on its own after a tap has started it once).
+let bgAudio = null;
+const SILENT = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=";
+function unlockBgAudio() {
+  if (bgAudio) return;
+  const a = document.createElement("audio"); a.preload = "auto"; a.setAttribute("controlslist", "nodownload");
+  bgAudio = a;
+  try { a.src = SILENT; const p = a.play(); if (p?.then) p.then(() => a.pause()).catch(() => {}); } catch { /* ignore */ }
+}
 const loopLabel = (n) => `🔁 Each sher: ${n === 1 ? "once" : n === 2 ? "twice" : n + " times"}`;
 const SLEEP = [["0", "Off"], ["ep", "End of episode"], ["15", "15 min"], ["30", "30 min"], ["60", "1 hour"]];
 const track = (P, type, extra = {}) => { try { P.api.track?.(type, { titleId: P.title.id, epId: P.ep?.id || "", ...extra }); } catch { /* best effort */ } };
@@ -105,9 +117,11 @@ export async function openPlayer(opts) {
     </div>`;
   document.body.append(ov);
   document.body.classList.add("playing");
+  if (listen && bgAudio) { const old = $("#pv", ov); bgAudio.id = "pv"; try { bgAudio.pause(); bgAudio.removeAttribute("src"); } catch { /* ignore */ } old.replaceWith(bgAudio); }
   const P = current = { ...opts, ov, listen, vertical, poetry: isPoetry(title) && !opts.trailer, shers: [], sherI: -1, loopN: opts.loopN || 1, loopLeft: 0, video: $("#pv", ov), sleepAt: 0, sleepEp: false, hls: null, ep: null, res: null, midDone: false, phase: "load", saveT: 0, idleT: 0, destroyed: false };
   if (!had) history.pushState({ player: 1 }, "");
   wire(P);
+  if (bgListenDevice()) ov.addEventListener("pointerdown", unlockBgAudio, { once: true, capture: true });
   // Shake was on last time: Android starts it straight away; iPhone needs one tap first (its motion permission rule).
   if (P.poetry && pref.shake && shakeSupported()) { if (needsMotionAsk()) ov.addEventListener("pointerup", () => shakeOn(P, true), { once: true }); else shakeOn(P, true); }
   if (pref.voice && !voiceSupported()) pref.voice = false; // e.g. switched on before it was turned off for iPhone
@@ -125,7 +139,8 @@ async function start(P, epId, trailer, startAt, skipIntro = false) {
   // Demo series episodes are plain MP4s shipped with the site: no ads, no server call.
   const local = !trailer && P.title.demo ? (P.episodes || []).find((x) => x.id === epId) || (P.episodes || [])[0] : null;
   try {
-    r = trailer && P.direct ? { hls: P.direct, ads: false, premium: false, rating: P.title.rating || "U", test: false }
+    r = !trailer && P.reuse?.epId === epId ? P.reuse
+      : trailer && P.direct ? { hls: P.direct, ads: false, premium: false, rating: P.title.rating || "U", test: false }
       : local?.src ? { hls: local.src, epId: local.id, n: local.n, name: local.name, ads: false, premium: false, rating: P.title.rating || "U", test: false }
       : P.pre?.id === epId && !trailer ? await P.pre.p.catch(() => P.api.play(P.title.id, epId, false, !P.listen && uprightPhone()))
       : await P.api.play(P.title.id, epId, trailer, !trailer && !P.listen && uprightPhone());
@@ -138,7 +153,7 @@ async function start(P, epId, trailer, startAt, skipIntro = false) {
     return errCard(P, "This video couldn't start.", e.message, e.status ? "api-" + e.status : "api");
   }
   if (P.destroyed) return;
-  P.pre = null;
+  P.pre = null; P.reuse = null;
   P.res = r; P.trailer = !!trailer;
   // The server picks the shape for this screen: 9:16 for a phone held upright (fills the phone, no forced landscape),
   // 16:9 for TVs, computers and phones turned sideways when the episode has a wide version.
@@ -350,6 +365,10 @@ function wire(P) {
     if (document.hidden && P.countT && P.phase === "play" && P.video.ended) { clearInterval(P.countT); P.countT = 0; goNext(P, nextEp(P), true); }
     // Back on screen after the phone refused to start the next episode on its own: start it now.
     else if (!document.hidden && P.autoNext && P.phase === "play" && P.video.paused) playSafe(P);
+    // Swiped away or locked while a video plays on a phone: carry on as sound at the same second (like YouTube).
+    if (document.hidden && !P.listen && !P.trailer && bgListenDevice() && P.phase === "play" && (!P.video.paused || Date.now() - (P.pausedAt || 0) < 1500) && !P.video.ended && P.ep) return switchMode(P, true);
+    // Back in the app after that: the picture comes back where the sound got to.
+    if (!document.hidden && P.listen && P.bgAuto && P.phase === "play" && !P.video.paused) return switchMode(P, true);
   };
   v.addEventListener("playing", () => { P.autoNext = false; });
   document.addEventListener("visibilitychange", P.onVis);
@@ -523,12 +542,13 @@ async function wakeLock(P, on) {
 }
 
 // Switch between watching and listening at the same point, without the rating card or another ad.
-function switchMode(P) {
+function switchMode(P, auto = false) {
   if (P.trailer) return;
-  const at = Math.floor(P.video.currentTime || 0);
+  const at = auto ? P.video.currentTime || 0 : Math.floor(P.video.currentTime || 0);
   const opts = { api: P.api, title: P.title, episodes: P.episodes, epId: P.ep?.id || P.epId, trailer: false, startAt: at, ads: P.ads, direct: P.direct,
-    onNeedPlan: P.onNeedPlan, onNeedSignIn: P.onNeedSignIn, onNeedAge: P.onNeedAge, onClosed: P.onClosed, listen: !P.listen, skipIntro: true, midDone: P.midDone, loopN: P.loopN };
-  openPlayer(opts).then(() => { if (current && current.listen) toast("Listening: lock your phone or switch apps, it keeps playing", 3500); });
+    onNeedPlan: P.onNeedPlan, onNeedSignIn: P.onNeedSignIn, onNeedAge: P.onNeedAge, onClosed: P.onClosed, listen: !P.listen, skipIntro: true, midDone: P.midDone, loopN: P.loopN,
+    reuse: P.res && !P.res.preview ? P.res : null, bgAuto: auto && !P.listen };
+  openPlayer(opts).then(() => { if (current && current.listen && !auto) toast("Listening: lock your phone or switch apps, it keeps playing", 3500); });
 }
 
 // ---- Repeat the last sher -------------------------------------------------------------------------------
