@@ -127,6 +127,7 @@ async function start(P, epId, trailer, startAt, skipIntro = false) {
   try {
     r = trailer && P.direct ? { hls: P.direct, ads: false, premium: false, rating: P.title.rating || "U", test: false }
       : local?.src ? { hls: local.src, epId: local.id, n: local.n, name: local.name, ads: false, premium: false, rating: P.title.rating || "U", test: false }
+      : P.pre?.id === epId && !trailer ? await P.pre.p.catch(() => P.api.play(P.title.id, epId, false, !P.listen && uprightPhone()))
       : await P.api.play(P.title.id, epId, trailer, !trailer && !P.listen && uprightPhone());
   }
   catch (e) {
@@ -137,6 +138,7 @@ async function start(P, epId, trailer, startAt, skipIntro = false) {
     return errCard(P, "This video couldn't start.", e.message, e.status ? "api-" + e.status : "api");
   }
   if (P.destroyed) return;
+  P.pre = null;
   P.res = r; P.trailer = !!trailer;
   // The server picks the shape for this screen: 9:16 for a phone held upright (fills the phone, no forced landscape),
   // 16:9 for TVs, computers and phones turned sideways when the episode has a wide version.
@@ -200,6 +202,10 @@ async function attach(P, src) {
   const q = $("#pq", P.ov); q.innerHTML = `<option value="-1">Quality: Auto</option>`; q.hidden = true;
   if (/\.mp4(\?|$)/i.test(src)) { v.src = src; return; }
   const native = !!v.canPlayType("application/vnd.apple.mpegurl");
+  // Listening on an iPhone or iPad: Safari's own HLS keeps playing with the screen locked and moves on to the next
+  // episode in the background; hls.js there runs on Media Source, which the phone stops feeding once the screen is off.
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+  if (P.listen && native && ios) { v.src = src; return; }
   try { await loadScript(HLS_JS); } catch { if (native) { v.src = src; return; } throw new Error("The video player didn't load. Check your connection and try again."); }
   if (!window.Hls?.isSupported()) {
     if (native) { v.src = src; return; }
@@ -257,13 +263,16 @@ function save(P) {
   const v = P.video; if (!v.duration || !isFinite(v.duration)) return;
   P.api.saveProgress(P.title.id, { epId: P.ep.id, n: P.ep.n || 1, pos: Math.floor(v.currentTime), dur: Math.floor(v.duration) });
 }
-function goNext(P, ep) {
+function goNext(P, ep, auto = false) {
   if (!ep) return;
   save(P);
   // Locked episodes show the plan card inside the player instead of a failed request.
   if (!freeEpisode(P.title, ep) && !P.res?.premium && !P.title.previewSec) { P.video.pause(); P.ep = ep; return layer(P, `<div class="pcard"><span class="eyebrow">Episode ${ep.n} is locked</span><h3>Keep watching ${esc(P.title.title)}</h3><p>${STORE_APP ? PLAN_LINE : "All episodes, no ads, for ₹999 a year."}</p><button class="btn gold" data-pplan>${PLAN_BTN}</button></div>`); }
   P.video.pause();
-  start(P, ep.id, false, 0);
+  // Moving on by itself while listening or with the screen off: skip the rating card and ad pause (already shown for
+  // this series), so the sound carries straight on without waiting on a timer the locked phone won't run.
+  P.autoNext = auto;
+  start(P, ep.id, false, 0, auto && (P.listen || document.hidden));
 }
 
 const ICON_PLAY = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4v16l13-8z"/></svg>`;
@@ -302,11 +311,17 @@ function wire(P) {
     if (!P.seeking) { const pct = d ? (v.currentTime / d) * 100 : 0; fill.style.width = pct + "%"; knob.style.left = pct + "%"; }
     time.textContent = clock(v.currentTime); left.textContent = d ? "-" + clock(Math.max(0, d - v.currentTime)) : "";
     if (P.res?.ads && !P.trailer && d > MIDROLL_MIN_SEC) { cue.hidden = P.midDone; cue.style.left = "50%"; }
-    if (P.res?.ads && !P.trailer && !P.midDone && d > MIDROLL_MIN_SEC && v.currentTime > d / 2 && P.phase === "play") { P.midDone = true; adBreak(P, "Mid-roll"); }
+    if (P.res?.ads && !P.trailer && !P.midDone && d > MIDROLL_MIN_SEC && v.currentTime > d / 2 && P.phase === "play" && !(P.listen && document.hidden)) { P.midDone = true; adBreak(P, "Mid-roll"); }
     if (Date.now() - P.saveT > 10e3) { P.saveT = Date.now(); save(P); posState(P); }
     if (P.shers.length && P.phase === "play") sherTick(P);
     if (P.sleepAt && Date.now() >= P.sleepAt) { P.sleepAt = 0; v.pause(); const sl = $("#psleep", ov); if (sl) sl.value = "0"; toast("Sleep timer: paused", 4000); }
     if (!P.trailer && !P.completed && d > 60 && v.currentTime / d > 0.9) { P.completed = true; track(P, "complete"); }
+    // Listening with the screen off: fetch the next episode's link early, so when this one ends the next starts at once.
+    // (A locked phone pauses the page as soon as the sound stops; any wait in between leaves it silent until unlocked.)
+    if (P.listen && d && d - v.currentTime < 60 && !P.pre && pref.autoplay && !P.res?.preview) {
+      const nx = nextEp(P);
+      if (nx && (freeEpisode(P.title, nx) || P.res?.premium || P.title.previewSec)) { P.pre = { id: nx.id, p: P.api.play(P.title.id, nx.id, false, false) }; P.pre.p.catch(() => {}); }
+    }
   });
   v.addEventListener("progress", () => { try { const d = v.duration; if (d && v.buffered.length) buf.style.width = (v.buffered.end(v.buffered.length - 1) / d) * 100 + "%"; } catch { /* ignore */ } });
   v.addEventListener("ended", () => {
@@ -320,18 +335,23 @@ function wire(P) {
     const nxName = `Episode ${nx.n}${nx.name && !/^Episode \d+$/.test(nx.name) ? ": " + esc(nx.name) : ""}`;
     if (!pref.autoplay) return layer(P, `<div class="pcard"><span class="eyebrow">Up next</span><h3>${nxName}</h3><div class="row"><button class="btn gold" data-pgo>Play</button><button class="btn ghost" data-pclose>Close</button></div></div>`);
     // Screen off or another app open: no countdown to look at, go straight on so the sound doesn't stop.
-    if (document.hidden) return goNext(P, nx);
+    if (document.hidden) return goNext(P, nx, true);
     // A short countdown that counts real time, so it still finishes on time if the phone slows the page down.
     const secs = P.listen ? 3 : 5, until = Date.now() + secs * 1000;
     layer(P, `<div class="pcard"><span class="eyebrow">Up next</span><h3>${nxName}</h3><p id="pcount">Starts in ${secs}s</p><div class="row"><button class="btn gold" data-pgo>Play now</button><button class="btn ghost" data-pstay>Cancel</button></div></div>`);
     clearInterval(P.countT);
-    P.countT = setInterval(() => { const n = Math.ceil((until - Date.now()) / 1000); const c = $("#pcount", ov); if (c) c.textContent = `Starts in ${Math.max(0, n)}s`; if (n <= 0) { clearInterval(P.countT); goNext(P, nx); } }, 250);
+    P.countT = setInterval(() => { const n = Math.ceil((until - Date.now()) / 1000); const c = $("#pcount", ov); if (c) c.textContent = `Starts in ${Math.max(0, n)}s`; if (n <= 0) { clearInterval(P.countT); goNext(P, nx, true); } }, 250);
   });
   // Leaving the app (screen off, another app) during the countdown: start the next episode now, since the phone may
   // slow the countdown down in the background.
   P.onVisVoice = () => { if (document.hidden) { if (P.voice) { P.voice.stop(); P.voice = null; P.voicePaused = true; } } else if (P.voicePaused && pref.voice) { P.voicePaused = false; voiceOn(P, true); } };
   document.addEventListener("visibilitychange", P.onVisVoice);
-  P.onVis = () => { if (document.hidden && P.countT && P.phase === "play" && P.video.ended) { clearInterval(P.countT); P.countT = 0; goNext(P, nextEp(P)); } };
+  P.onVis = () => {
+    if (document.hidden && P.countT && P.phase === "play" && P.video.ended) { clearInterval(P.countT); P.countT = 0; goNext(P, nextEp(P), true); }
+    // Back on screen after the phone refused to start the next episode on its own: start it now.
+    else if (!document.hidden && P.autoNext && P.phase === "play" && P.video.paused) playSafe(P);
+  };
+  v.addEventListener("playing", () => { P.autoNext = false; });
   document.addEventListener("visibilitychange", P.onVis);
   // Progress bar: tap or drag (finger or mouse); the picture jumps when you let go.
   const frac = (x) => { const r = bar.getBoundingClientRect(); return Math.max(0, Math.min(1, (x - r.left) / r.width)); };
