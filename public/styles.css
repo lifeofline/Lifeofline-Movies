@@ -782,3 +782,7 @@ html { overflow-x: clip; }
 @media (max-width: 520px) { .pmid { gap: clamp(14px, 5vw, 28px); } .pmid .pic.ep { width: 46px; } }
 .pmid .pic { -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
 .pmid .pic.ep { background: rgba(0,0,0,.5); }
+
+/* Continue watching: the episode they were on, then the time left */
+.tile .cap .cont-ep { display: block; color: var(--fg, #fff); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile .cap .cont-left { display: block; color: var(--gold); font-size: .92em; }

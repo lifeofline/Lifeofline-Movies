@@ -107,7 +107,7 @@ export async function openPlayer(opts) {
         <div class="pctl pbtns">
           <button class="pbtn psher" data-psher id="psherb" hidden aria-label="Repeat the last sher">↺ Sher</button>
           <button class="pbtn plist" data-plist id="plist" hidden aria-label="List of shers">☰ Shers</button>
-          ${opts.trailer ? "" : `<button class="pbtn pmode" data-pmode aria-label="${listen ? "Watch the video" : "Listen with the screen off"}">${listen ? ICON_TV + "<span>Watch</span>" : ICON_HEAD + "<span>Listen</span><small>screen can be off</small>"}</button>`}
+          ${opts.trailer || !listen ? "" : `<button class="pbtn pmode" data-pmode aria-label="${listen ? "Watch the video" : "Listen with the screen off"}">${listen ? ICON_TV + "<span>Watch</span>" : ICON_HEAD + "<span>Listen</span><small>screen can be off</small>"}</button>`}
           <span class="pspace"></span>
           <button class="pbtn pmorebtn" data-pmore id="pmoreb" aria-expanded="false" aria-controls="pmenu" aria-label="More options">⋯ More</button>
           ${listen ? "" : `<button class="pic" data-pfs aria-label="Full screen" id="pfsb">${ICON_FS}</button>`}
@@ -314,7 +314,7 @@ function prevEp(P) {
 function save(P) {
   if (!P.ep || P.trailer || P.res?.preview) return;
   const v = P.video; if (!v.duration || !isFinite(v.duration)) return;
-  P.api.saveProgress(P.title.id, { epId: P.ep.id, n: P.ep.n || 1, pos: Math.floor(v.currentTime), dur: Math.floor(v.duration) });
+  P.api.saveProgress(P.title.id, { epId: P.ep.id, n: P.ep.n || 1, name: String(P.ep.name || P.res?.name || "").slice(0, 120), pos: Math.floor(v.currentTime), dur: Math.floor(v.duration) });
 }
 function goNext(P, ep, auto = false) {
   if (!ep) return;

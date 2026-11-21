@@ -134,7 +134,7 @@ function mainAction(t) {
   if (freeCount(t) > 0) return `<button class="btn gold" data-play="${esc(t.id)}" data-nav>▶ Watch episode 1 free</button>`;
   return STORE_APP ? `<a class="btn gold" href="#plans" data-nav>Premium title</a>` : `<a class="btn gold" href="#plans" data-nav>Subscribe to watch · ₹${PRICE}</a>`;
 }
-function tile(t, shape = "tall") {
+function tile(t, shape = "tall", cont = false) {
   const p = S.progress[t.id];
   const tag = isConcept(t) ? `<span class="tag concept">Concept</span>`
     : isDemo(t) ? `<span class="tag demo">Demo</span>`
@@ -145,13 +145,29 @@ function tile(t, shape = "tall") {
   return `<a class="tile" href="#t/${esc(t.id)}" data-nav aria-label="${esc(t.title)}"${t.teaser ? ` data-teaser="${esc(t.teaser)}"` : ""}${flip ? ` data-flip="${esc(t.id)}"` : ""}>
     <div class="poster ${shape}" style="${posterStyle(t)}">${tag}${t.format === "v" ? '<span class="tag r">9:16</span>' : ""}${t.poster ? "" : `<div class="pt">${esc(t.title)}</div>`}</div>
     ${p ? `<div class="prog"><i style="width:${pct}%"></i></div>` : ""}
-    <div class="cap">${t.poster ? `<b>${esc(t.title)}</b>` : ""}<span>${isConcept(t) ? "Concept" : isDemo(t) ? "Demo series · 3 short episodes" : `${esc(KINDS[t.kind] || "")} · ${esc(t.lang || "")}`}</span></div></a>`;
+    <div class="cap">${t.poster ? `<b>${esc(t.title)}</b>` : ""}${cont && p ? contLine(t, p) : `<span>${isConcept(t) ? "Concept" : isDemo(t) ? "Demo series · 3 short episodes" : `${esc(KINDS[t.kind] || "")} · ${esc(t.lang || "")}`}</span>`}</div></a>`;
 }
-function rail(title, items, { shape = "tall", sub = "", more = "" } = {}) {
+// Older progress saved without the episode name: look the name up and fill it in.
+async function fillContNames() {
+  for (const el of $$("[data-contname]")) {
+    const eps = await episodesOf(el.dataset.contname); if (!el.isConnected) return;
+    const e = eps.find((x) => x.id === el.dataset.ep) || eps.find((x) => String(x.n) === el.dataset.n);
+    if (e?.name && !/^(Episode|Ep\.?)\s*\d+$/i.test(e.name)) el.textContent = `Ep ${e.n || el.dataset.n} · ${e.name}`;
+    el.removeAttribute("data-contname");
+  }
+}
+// Continue watching: exactly where they stopped, episode number and name, and the time left.
+function contLine(t, p) {
+  const name = String(p.name || "").trim();
+  const ep = t.kind === "movie" ? "" : `Ep ${p.n || 1}${name && !/^(Episode|Ep\.?)\s*\d+$/i.test(name) ? " · " + name : ""}`;
+  const left = p.dur && p.pos ? Math.max(0, Math.round((p.dur - p.pos) / 60)) : 0;
+  return `<span class="cont-ep"${!name && ep ? ` data-contname="${esc(t.id)}" data-ep="${esc(p.epId || "")}" data-n="${esc(p.n || 1)}"` : ""}>${esc(ep)}</span>${left ? `<span class="cont-left">${left < 1 ? "Less than a minute" : left + " min"} left</span>` : ""}`;
+}
+function rail(title, items, { shape = "tall", sub = "", more = "", cont = false } = {}) {
   if (!items.length) return "";
   return `<section class="rail"><div class="rail-h"><h2>${title}</h2>${more ? `<a href="${more}" data-nav>See all</a>` : `<span>${sub}</span>`}</div>
     <div class="rowwrap"><button class="rarr l" data-scroll="-1" aria-label="Scroll left" tabindex="-1">‹</button>
-    <div class="track ${shape}">${items.map((t) => tile(t, shape)).join("")}</div>
+    <div class="track ${shape}">${items.map((t) => tile(t, shape, cont)).join("")}</div>
     <button class="rarr r" data-scroll="1" aria-label="Scroll right" tabindex="-1">›</button></div></section>`;
 }
 // Ten picks with big rank numbers, like a streaming "Top 10" row (an editorial list, set by the order in Admin).
@@ -205,7 +221,7 @@ function vHome() {
   return `${pool.length ? heroCarousel(pool) : ""}
     ${chips()}
     ${S.premium ? "" : rail("Watch free now", R.filter(freeNow), { sub: "No plan needed · short ad breaks" })}
-    ${rail("Continue watching", cont)}
+    ${rail("Continue watching", cont, { cont: true })}
     ${rail("New on Lifeofline", newest.slice(0, 12))}
     ${many ? "" : rail("Series · demo", demos, { sub: "Fictional animated story cards · free, no ads" })}
     ${top10(ready)}
@@ -756,7 +772,7 @@ async function route() {
   if (S.toChaps) { S.toChaps = false; $("#episodes")?.scrollIntoView({ block: "start" }); }
   if (S.tv) setTimeout(() => { const f = $("#app [data-nav]"); if (f && !document.activeElement?.closest("#app")) f.focus({ preventScroll: true }); }, 30);
   if (r === "t") fillThumbs(arg);
-  mountFlips();
+  mountFlips(); fillContNames();
   if (r === "search") { const q = $("#q"); q.focus(); q.setSelectionRange(q.value.length, q.value.length); loadSherIndex().catch(() => {}); fillShers(S.q || ""); }
 }
 window.addEventListener("hashchange", () => { if (history.state?.player) return; route(); });
