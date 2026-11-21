@@ -773,3 +773,12 @@ html { overflow-x: clip; }
 .pbtns .pmode small { color: var(--gold); font-size: 11px; font-weight: 600; }
 @media (max-width: 640px) { .pbtns .pmode small { display: none; } }
 @media (max-width: 400px) { .pctl.pbtns .pbtn { padding: 8px 9px; font-size: 12.5px; } .pctl.pbtns { gap: 6px; } }
+
+/* Previous / next episode either side of the playback controls (as on YouTube); hidden slots keep the row centred */
+.pmid .pic.ep { width: 52px; height: auto; border-radius: 14px; padding: 8px 0 6px; background: rgba(0,0,0,.35); display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.pmid .pic.ep svg { width: 22px; height: 22px; }
+.pmid .pic.ep span { font-size: 10.5px; font-weight: 600; letter-spacing: .02em; opacity: .9; }
+.pmid .pic.ep[hidden] { display: flex; visibility: hidden; }
+@media (max-width: 520px) { .pmid { gap: clamp(14px, 5vw, 28px); } .pmid .pic.ep { width: 46px; } }
+.pmid .pic { -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.pmid .pic.ep { background: rgba(0,0,0,.5); }

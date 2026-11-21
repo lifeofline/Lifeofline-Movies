@@ -18,6 +18,7 @@ const START_TIMEOUT_MS = 20000; // no picture after this long = show a clear err
 const ICON_X = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>`;
 const ICON_BACK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v4h4"/><text x="12" y="15.5" font-size="7" font-weight="700" fill="currentColor" stroke="none" text-anchor="middle" font-family="system-ui,sans-serif">10</text></svg>`;
 const ICON_FWD = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v4h-4"/><text x="12" y="15.5" font-size="7" font-weight="700" fill="currentColor" stroke="none" text-anchor="middle" font-family="system-ui,sans-serif">10</text></svg>`;
+const ICON_PREV = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18 5v14l-9-7zM8 5H5.5v14H8z"/></svg>`;
 const ICON_NEXT = `<svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" aria-hidden="true"><path d="M6 5v14l9-7zM16 5h2.5v14H16z"/></svg>`;
 const ICON_FS = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>`;
 const ICON_FS_EXIT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>`;
@@ -84,12 +85,13 @@ export async function openPlayer(opts) {
       <div class="pseekfx l" id="pfxl" aria-hidden="true">${ICON_BACK}<span>10 sec</span></div><div class="pseekfx r" id="pfxr" aria-hidden="true">${ICON_FWD}<span>10 sec</span></div>
       <div class="plyr" id="plyr"></div>
       <div class="pvst" id="pvst" hidden aria-live="polite"><i></i><span id="pvtx">Say “phir se”, “agla” or “ruko”</span></div>
-      <div class="ptop"><button class="pic" data-pclose aria-label="Close">${ICON_X}</button><div class="pttl"><span class="pt2"><b id="pname">${esc(title.title)}</b><span class="psubrow"><small id="psub" hidden></small><span class="rating" id="prate">${esc(title.rating || "U")}</span></span></span></div>
-        <button class="pbtn pnext" data-pnext id="pnext" hidden aria-label="Next episode">Next<span class="nx-long"> episode</span> ${ICON_NEXT}</button></div>
+      <div class="ptop"><button class="pic" data-pclose aria-label="Close">${ICON_X}</button><div class="pttl"><span class="pt2"><b id="pname">${esc(title.title)}</b><span class="psubrow"><small id="psub" hidden></small><span class="rating" id="prate">${esc(title.rating || "U")}</span></span></span></div></div>
       <div class="pmid" id="pmid">
+        <button class="pic ep" data-pprev id="pprev" hidden aria-label="Previous episode">${ICON_PREV}<span>Previous</span></button>
         <button class="pic big" data-seek="-10" aria-label="Back 10 seconds">${ICON_BACK}</button>
         <button class="pic huge" data-pp aria-label="Play or pause" id="ppb"></button>
         <button class="pic big" data-seek="10" aria-label="Forward 10 seconds">${ICON_FWD}</button>
+        <button class="pic ep" data-pnext id="pnext" hidden aria-label="Next episode">${ICON_NEXT}<span>Next</span></button>
       </div>
       <div class="pbot" id="pbot">
         <div class="pctl">
@@ -173,7 +175,7 @@ async function start(P, epId, trailer, startAt, skipIntro = false) {
   { const sb = $("#psherb", P.ov); sb.hidden = !P.poetry || trailer; sb.textContent = P.shers.length ? "↺ Sher" : `↺ ${FALLBACK_BACK}s`; sb.setAttribute("aria-label", P.shers.length ? "Repeat the last sher" : `Back ${FALLBACK_BACK} seconds`); } $("#ploop", P.ov).hidden = !P.shers.length; { const pl = $("#plist", P.ov); pl.hidden = !P.shers.length && !P.parts.length; pl.textContent = P.parts.length ? "☰ Parts" : "☰ Shers"; pl.setAttribute("aria-label", P.parts.length ? "Letters and stories in this episode" : "List of shers"); }
   $("#ploop", P.ov).textContent = loopLabel(P.loopN); $("#ploop", P.ov).setAttribute("aria-pressed", P.loopN > 1);
   showSher(P, -1);
-  const nx = nextEp(P); $("#pnext", P.ov).hidden = !nx; $("#pauto", P.ov).hidden = !(P.episodes?.length > 1) || trailer;
+  const nx = nextEp(P); $("#pnext", P.ov).hidden = !nx; $("#pprev", P.ov).hidden = !prevEp(P); $("#pauto", P.ov).hidden = !(P.episodes?.length > 1) || trailer;
   if (P.listen) { const le = $("#lep", P.ov); if (le) le.textContent = P.title.kind === "movie" ? "" : `Episode ${r.n}${r.name && !/^Episode \d+$/.test(r.name) ? " · " + r.name : ""}`; }
   if ("mediaSession" in navigator && window.MediaMetadata) {
     const epLine = !trailer && P.title.kind !== "movie" ? `Ep ${r.n}${r.name && !/^Episode \d+$/.test(r.name) ? ": " + r.name : ""}` : "";
@@ -413,6 +415,7 @@ function wire(P) {
     if (b.hasAttribute("data-pp")) return v.paused ? playSafe(P) : v.pause();
     if (b.dataset.seek) return skip(Number(b.dataset.seek));
     if (b.hasAttribute("data-pnext")) return goNext(P, nextEp(P));
+    if (b.hasAttribute("data-pprev")) return goNext(P, prevEp(P));
     if (b.hasAttribute("data-pgo")) { clearInterval(P.countT); return goNext(P, nextEp(P)); }
     if (b.hasAttribute("data-plclose")) return layer(P, "");
     if (b.hasAttribute("data-pstay")) { clearInterval(P.countT); return layer(P, `<div class="pcard"><span class="eyebrow">Autoplay stopped</span><div class="row"><button class="btn gold" data-pgo>Play the next episode</button><button class="btn ghost" data-pclose>Close</button></div></div>`); }
