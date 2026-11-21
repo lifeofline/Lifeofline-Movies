@@ -327,7 +327,7 @@ function goNext(P, ep, auto = false) {
   if (!ep) return;
   save(P);
   // Locked episodes show the plan card inside the player instead of a failed request.
-  if (!freeEpisode(P.title, ep) && !P.res?.premium && !P.title.previewSec) { P.video.pause(); P.ep = ep; return layer(P, `<div class="pcard"><span class="eyebrow">Episode ${ep.n} is locked</span><h3>Keep watching ${esc(P.title.title)}</h3><p>${STORE_APP ? PLAN_LINE : "All episodes, no ads, for ₹999 a year."}</p><button class="btn gold" data-pplan>${PLAN_BTN}</button></div>`); }
+  if (!freeEpisode(P.title, ep) && !P.res?.premium && !P.title.previewSec) { P.userPaused = true; P.video.pause(); P.ep = ep; return layer(P, `<div class="pcard"><span class="eyebrow">Episode ${ep.n} is locked</span><h3>Keep watching ${esc(P.title.title)}</h3><p>${STORE_APP ? PLAN_LINE : "All episodes, no ads, for ₹999 a year."}</p><button class="btn gold" data-pplan>${PLAN_BTN}</button></div>`); }
   P.video.pause();
   // Moving on by itself while listening or with the screen off: skip the rating card and ad pause (already shown for
   // this series), so the sound carries straight on without waiting on a timer the locked phone won't run.
@@ -354,6 +354,10 @@ function wire(P) {
       if (to < v.currentTime - 0.5) v.currentTime = to;
     }
     P.pausedAt = 0; wakeLock(P, !P.listen); if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "playing"; ppb.innerHTML = ICON_PAUSE; ppb.setAttribute("aria-label", "Pause"); wake(); });
+  v.addEventListener("play", () => { P.userPaused = false; P.sysPaused = false; });
+  // Back in the app after a phone call (or anything else that paused it without the viewer asking): carry on.
+  P.onResume = () => { if (!document.hidden && P.sysPaused && P.phase === "play" && v.paused && !P.destroyed) { P.sysPaused = false; playSafe(P); } };
+  document.addEventListener("visibilitychange", P.onResume); window.addEventListener("focus", P.onResume); window.addEventListener("pageshow", P.onResume);
   v.addEventListener("playing", () => {
     ov.classList.remove("buffering", "slow");
     if (P.phase === "error") { layer(P, ""); P.phase = "play"; }
@@ -366,7 +370,9 @@ function wire(P) {
     errCard(P, c === 4 ? "This video format isn't supported here." : c === 3 ? "This video couldn't be decoded." : "This video stopped loading.",
       c === 4 ? "Try the latest Chrome, Safari or Edge, or another device. Please report it so we can check the file." : "Press Retry. If it keeps happening, report it and we'll check the video.", "media-" + (c || "?"));
   });
-  v.addEventListener("pause", () => { P.pausedAt = Date.now(); wakeLock(P, false); if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused"; ppb.innerHTML = ICON_PLAY; ppb.setAttribute("aria-label", "Play"); ov.classList.remove("idle"); clearTimeout(P.idleT); save(P); });
+  v.addEventListener("pause", () => {
+    P.sysPaused = !P.userPaused && P.phase === "play" && !v.ended && !P.seeking && !P.destroyed;
+    P.pausedAt = Date.now(); wakeLock(P, false); if ("mediaSession" in navigator) navigator.mediaSession.playbackState = "paused"; ppb.innerHTML = ICON_PLAY; ppb.setAttribute("aria-label", "Play"); ov.classList.remove("idle"); clearTimeout(P.idleT); save(P); });
   v.addEventListener("timeupdate", () => {
     const d = v.duration || 0;
     if (P.phase === "play" && v.currentTime > 1) P.lastPos = v.currentTime;
@@ -376,7 +382,7 @@ function wire(P) {
     if (P.res?.ads && !P.trailer && !P.midDone && d > MIDROLL_MIN_SEC && v.currentTime > d / 2 && P.phase === "play" && !(P.listen && document.hidden)) { P.midDone = true; adBreak(P, "Mid-roll"); }
     if (Date.now() - P.saveT > 10e3) { P.saveT = Date.now(); save(P); posState(P); }
     if (P.shers.length && P.phase === "play") sherTick(P);
-    if (P.sleepAt && Date.now() >= P.sleepAt) { P.sleepAt = 0; v.pause(); const sl = $("#psleep", ov); if (sl) sl.value = "0"; toast("Sleep timer: paused", 4000); }
+    if (P.sleepAt && Date.now() >= P.sleepAt) { P.sleepAt = 0; (P.userPaused = true, v.pause()); const sl = $("#psleep", ov); if (sl) sl.value = "0"; toast("Sleep timer: paused", 4000); }
     if (!P.trailer && !P.completed && d > 60 && v.currentTime / d > 0.9) { P.completed = true; track(P, "complete"); }
     // Listening with the screen off: fetch the next episode's link early, so when this one ends the next starts at once.
     // (A locked phone pauses the page as soon as the sound stops; any wait in between leaves it silent until unlocked.)
@@ -461,7 +467,7 @@ function wire(P) {
     if (ov.classList.contains("idle") && !b.closest(".plyr")) { wake(); return; } // first tap on hidden controls just shows them
     wake();
     if (b.hasAttribute("data-pclose")) return closePlayer();
-    if (b.hasAttribute("data-pp")) return v.paused ? playSafe(P) : v.pause();
+    if (b.hasAttribute("data-pp")) return v.paused ? playSafe(P) : (P.userPaused = true, v.pause());
     if (b.dataset.seek) return skip(Number(b.dataset.seek));
     if (b.hasAttribute("data-pnext")) return goNext(P, nextEp(P));
     if (b.hasAttribute("data-pprev")) return goNext(P, prevEp(P));
@@ -507,7 +513,7 @@ function wire(P) {
     wake();
     if (e.key === "Escape" || e.key === "Backspace" || e.key === "BrowserBack" || e.key === "GoBack") { e.preventDefault(); return closePlayer(); }
     if (P.phase !== "play") return;
-    if (e.key === " " || e.key === "Enter" || e.key === "MediaPlayPause") { if (document.activeElement?.tagName === "BUTTON" && e.key === "Enter") return; e.preventDefault(); v.paused ? playSafe(P) : v.pause(); }
+    if (e.key === " " || e.key === "Enter" || e.key === "MediaPlayPause") { if (document.activeElement?.tagName === "BUTTON" && e.key === "Enter") return; e.preventDefault(); v.paused ? playSafe(P) : (P.userPaused = true, v.pause()); }
     else if (e.key === "ArrowRight" || e.key === "MediaFastForward") { e.preventDefault(); if (v.duration) v.currentTime = Math.min(v.duration - 1, v.currentTime + 10); }
     else if (e.key === "ArrowLeft" || e.key === "MediaRewind") { e.preventDefault(); v.currentTime = Math.max(0, v.currentTime - 10); }
     else if (P.vertical && e.key === "ArrowDown") { e.preventDefault(); goNext(P, nextEp(P)); }
@@ -525,7 +531,7 @@ function wire(P) {
   if ("mediaSession" in navigator) {
     const ms = navigator.mediaSession;
     try {
-      ms.setActionHandler("play", () => playSafe(P)); ms.setActionHandler("pause", () => v.pause());
+      ms.setActionHandler("play", () => playSafe(P)); ms.setActionHandler("pause", () => (P.userPaused = true, v.pause()));
       // iPhone's lock screen and AirPods show "skip back" rather than "previous": on poetry it repeats the sher too.
       ms.setActionHandler("seekbackward", () => { if (P.poetry && P.phase === "play") return repeatSher(P); skip(-10); }); ms.setActionHandler("seekforward", () => skip(10));
       ms.setActionHandler("nexttrack", () => { const nx = nextEp(P); if (nx) goNext(P, nx); });
@@ -545,6 +551,7 @@ function teardown(fromCode) {
   clearInterval(P.countT); clearTimeout(P.idleT); clearTimeout(P.startT); wakeLock(P, false);
   document.removeEventListener("visibilitychange", P.onVis);
   document.removeEventListener("visibilitychange", P.onVisVoice);
+  document.removeEventListener("visibilitychange", P.onResume); window.removeEventListener("focus", P.onResume); window.removeEventListener("pageshow", P.onResume); clearInterval(P.resumeT);
   if (P.voice) { P.voice.stop(); P.voice = null; }
   if (P.shake) { window.removeEventListener("devicemotion", P.shake); P.shake = null; }
   document.removeEventListener("keydown", P.onKey);
@@ -700,7 +707,7 @@ function voiceCommand(P, cmd, heard) {
   if (cmd === "repeat") { say(P.poetry ? "repeating the sher" : "back 10 seconds"); if (P.poetry) repeatSher(P); else if (v.duration) v.currentTime = Math.max(0, v.currentTime - 10); return; }
   if (cmd === "next") { const nx = nextEp(P); say(nx ? "next episode" : "this is the last episode"); if (nx) { clearInterval(P.countT); goNext(P, nx); } return; }
   if (cmd === "prev") { const pv = prevEp(P); say(pv ? "previous episode" : "this is the first episode"); if (pv) goNext(P, pv); return; }
-  if (cmd === "pause") { say("paused"); v.pause(); return; }
+  if (cmd === "pause") { say("paused"); (P.userPaused = true, v.pause()); return; }
   if (cmd === "play") { say("playing"); if (P.phase === "play" && v.paused) playSafe(P); else if (v.ended) { const nx = nextEp(P); if (nx) goNext(P, nx); } }
 }
 
