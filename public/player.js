@@ -138,7 +138,7 @@ export async function openPlayer(opts) {
   await start(P, opts.epId, opts.trailer, opts.startAt, opts.skipIntro);
 }
 
-function layer(P, html) { const l = $("#plyr", P.ov); l.innerHTML = html; l.hidden = !html; P.ov.classList.toggle("has-layer", !!html); }
+function layer(P, html) { const l = $("#plyr", P.ov); l.innerHTML = html; l.hidden = !html; P.ov.classList.toggle("has-layer", !!html); P.ov.classList.toggle("has-sheet", html.includes('class="plsheet"')); }
 
 async function start(P, epId, trailer, startAt, skipIntro = false) {
   P.phase = "load"; P.midDone = skipIntro ? !!P.midDone : false; P.completed = false; clearTimeout(P.startT); P.ov.classList.remove("slow");

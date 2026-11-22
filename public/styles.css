@@ -751,6 +751,8 @@ html { overflow-x: clip; }
 
 /* Shers list as a sheet: the video keeps playing in view (bottom on phones held upright, right side on wide screens) */
 .plyr:has(> .plsheet) { pointer-events: none; }
+/* The shers sheet sits above the top bar (on wide screens it runs the full height, so the top bar used to cover its script switch) */
+.pov.has-sheet .plyr { z-index: 5; pointer-events: none; }
 .pov.has-layer:has(.plsheet) .pmid { display: none; }
 .plsheet { pointer-events: auto; position: absolute; left: 0; right: 0; bottom: 0; max-height: 58%; display: flex; background: rgba(15,11,22,.95); border-radius: 18px 18px 0 0; padding: 12px max(14px, env(safe-area-inset-left, 0px)) calc(12px + env(safe-area-inset-bottom, 0px)) max(14px, env(safe-area-inset-right, 0px)); box-shadow: 0 -10px 30px rgba(0,0,0,.5); }
 @media (min-aspect-ratio: 1/1) { .plsheet { left: auto; top: 0; width: min(440px, 44%); max-height: none; border-radius: 18px 0 0 18px; padding-top: calc(16px + env(safe-area-inset-top, 0px)); } }
