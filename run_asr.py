@@ -4,6 +4,7 @@ Writes OUT_DIR/<name>.json = [[start, end, text], ...]"""
 import sys, os, json, subprocess, re, time, numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from asr2 import ASR2
+from asr import ASR
 
 def load(p):
     raw = subprocess.run(["ffmpeg", "-v", "error", "-i", p, "-ac", "1", "-ar", "16000", "-f", "f32le", "-"], capture_output=True).stdout
@@ -28,7 +29,7 @@ def chunks(dur, sil, maxlen=25.0):
 if __name__ == "__main__":
     md, ad, od = sys.argv[1:4]
     os.makedirs(od, exist_ok=True)
-    a = ASR2(md)
+    a = ASR2(md) if os.path.exists(os.path.join(md, 'decoder_with_past_model_quantized.onnx')) else ASR(md)
     for f in sys.argv[4:]:
         dst = os.path.join(od, os.path.basename(f) + ".json")
         if os.path.exists(dst): continue
