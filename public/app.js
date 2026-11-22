@@ -743,6 +743,8 @@ async function route() {
   const seq = ++renderSeq;
   const h = decodeURIComponent((location.hash || "#home").slice(1));
   const [r, arg, sub] = h.split("/");
+  // Deep link to a moment: #play/<titleId>/<episodeId>/<seconds> opens the title and plays that episode from that second.
+  if (r === "play" && arg && sub) { const at = Math.max(0, Number(h.split("/")[3]) || 0); location.replace("#t/" + encodeURIComponent(arg)); setTimeout(() => play(arg, sub, false, false, at), 400); return; }
   if (r === "help" || r === "help-live") { location.replace("#home"); setTimeout(() => (r === "help-live" && S.user ? help.goLive() : help.open()), 300); return; }
   let html = "", tab = r;
   if (r === "t") { html = await vTitle(arg, sub); tab = ""; }
