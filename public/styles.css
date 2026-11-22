@@ -66,8 +66,8 @@ html { overflow-x: clip; }
 .top { transition: background .3s, border-color .3s; }
 body.home .top:not(.solid), body.titlepg .top:not(.solid) { background: linear-gradient(180deg, rgba(10,7,15,.85), rgba(10,7,15,0)); border-color: transparent; backdrop-filter: none; }
 .hero { position: relative; overflow: hidden; margin: calc(-1 * var(--toph, 58px)) calc(50% - 50vw) 0; width: 100vw; height: clamp(460px, 78vh, 680px); background: var(--ink); }
-.slide { position: absolute; inset: 0; opacity: 0; visibility: hidden; transition: opacity .45s ease, visibility 0s .45s; }
-.slide.on { opacity: 1; visibility: visible; transition: opacity .45s ease; }
+.slide { position: absolute; inset: 0; opacity: 0; visibility: hidden; transition: opacity .35s ease, visibility 0s .35s; }
+.slide.on { opacity: 1; visibility: visible; transition: opacity .35s ease; }
 .sbg { position: absolute; inset: -40px; background: center/cover no-repeat; filter: blur(30px) brightness(.42) saturate(1.25); transform: scale(1.1); }
 .sart { position: absolute; top: calc(var(--toph, 58px) + 24px); bottom: 72px; right: max(5vw, calc((100vw - 1400px) / 2 + 40px)); aspect-ratio: 4 / 5; border-radius: 14px; overflow: hidden; box-shadow: 0 30px 80px rgba(0,0,0,.6); }
 .sart video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
@@ -75,9 +75,12 @@ body.home .top:not(.solid), body.titlepg .top:not(.solid) { background: linear-g
 @keyframes drift { from { transform: scale(1.04) translateY(6px); } to { transform: none; } }
 .hshade { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(14,10,20,.95) 0%, rgba(14,10,20,.7) 38%, rgba(14,10,20,0) 65%), linear-gradient(0deg, var(--ink) 0%, rgba(20,15,28,0) 30%); }
 .hcopy { position: absolute; left: max(16px, calc((100vw - 1400px) / 2 + 16px), env(safe-area-inset-left, 0px)); bottom: 72px; max-width: min(560px, 55vw); display: flex; flex-direction: column; gap: 12px; }
-.slide.on .hcopy > * { animation: rise .7s ease-out both; }
-.slide.on .hcopy > :nth-child(2) { animation-delay: .08s; } .slide.on .hcopy > :nth-child(3) { animation-delay: .14s; }
-.slide.on .hcopy > :nth-child(4) { animation-delay: .2s; } .slide.on .hcopy > :nth-child(5) { animation-delay: .26s; }
+/* Only the backdrop cross-fades. The outgoing slide's words and poster vanish at once (no ghosted, overlapping
+   title while two slides fade), and the new words rise in only after the backdrop has changed. */
+.slide:not(.on) .hcopy, .slide:not(.on) .sart { opacity: 0; transition: none; animation: none; }
+.slide.on .hcopy > * { animation: rise .5s ease-out .25s both; }
+.slide.on .hcopy > :nth-child(2) { animation-delay: .31s; } .slide.on .hcopy > :nth-child(3) { animation-delay: .37s; }
+.slide.on .hcopy > :nth-child(4) { animation-delay: .43s; } .slide.on .hcopy > :nth-child(5) { animation-delay: .49s; }
 @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
 .hero h1 { font-size: clamp(36px, 6.4vw, 76px); line-height: .95; font-weight: 800; text-shadow: 0 4px 30px rgba(0,0,0,.5); }
 .hero p { margin: 0; color: var(--soft); max-width: 46ch; font-size: 17px; }
