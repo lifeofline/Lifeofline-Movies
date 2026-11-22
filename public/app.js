@@ -142,7 +142,9 @@ function tile(t, shape = "tall", cont = false) {
     : !t.premium ? `<span class="tag">Free</span>` : freeCount(t) > 0 && !S.premium ? `<span class="tag">Ep 1 free</span>` : `<span class="tag prem">Premium</span>`;
   const pct = p?.dur ? Math.min(100, (p.pos / p.dur) * 100) : 0;
   const flip = t.kind === "series" && (t.episodeCount || 0) >= 6 && !isDemo(t) && !isConcept(t) && !isSoon(t);
-  return `<a class="tile" href="#t/${esc(t.id)}" data-nav aria-label="${esc(t.title)}"${t.teaser ? ` data-teaser="${esc(t.teaser)}"` : ""}${flip ? ` data-flip="${esc(t.id)}"` : ""}>
+  // In Continue watching, a tap resumes the video straight away (the title page is one tap away from the title itself).
+  const resume = cont && p && !isSoon(t);
+  return `<a class="tile" href="#t/${esc(t.id)}"${resume ? ` data-play="${esc(t.id)}"` : ""} data-nav aria-label="${resume ? `Continue ${esc(t.title)}` : esc(t.title)}"${t.teaser ? ` data-teaser="${esc(t.teaser)}"` : ""}${flip ? ` data-flip="${esc(t.id)}"` : ""}>
     <div class="poster ${shape}" style="${posterStyle(t)}">${tag}${t.format === "v" ? '<span class="tag r">9:16</span>' : ""}${t.poster ? "" : `<div class="pt">${esc(t.title)}</div>`}</div>
     ${p ? `<div class="prog"><i style="width:${pct}%"></i></div>` : ""}
     <div class="cap">${t.poster ? `<b>${esc(t.title)}</b>` : ""}${cont && p ? contLine(t, p) : `<span>${isConcept(t) ? "Concept" : isDemo(t) ? "Demo series · 3 short episodes" : `${esc(KINDS[t.kind] || "")} · ${esc(t.lang || "")}`}</span>`}</div></a>`;
@@ -943,7 +945,7 @@ const pinHash = async (pin) => { const b = await crypto.subtle.digest("SHA-256",
 document.addEventListener("click", async (e) => {
   const el = e.target.closest("[data-play],[data-trailer],[data-lang],[data-avail],[data-hero],[data-listtog],[data-share],[data-subscribe],[data-signout],[data-cancel],[data-dob],[data-kidson],[data-kidsoff],[data-tvtog],[data-google],[data-facebook],[data-phone],[data-verify],[data-claim],[data-demo-reset]");
   if (!el) return;
-  if (el.dataset.play) return play(el.dataset.play, el.dataset.ep, false, el.hasAttribute("data-listen"));
+  if (el.dataset.play) { if (el.tagName === "A") e.preventDefault(); return play(el.dataset.play, el.dataset.ep, false, el.hasAttribute("data-listen")); }
   if (el.dataset.trailer) return play(el.dataset.trailer, null, true);
   if (el.dataset.lang) { S.lang = el.dataset.lang; store.set("lang", S.lang); S.keepScroll = true; return route(); }
   if (el.dataset.avail) { S.avail = el.dataset.avail; S.keepScroll = true; return route(); }
