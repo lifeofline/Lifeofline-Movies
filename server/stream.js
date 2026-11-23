@@ -116,6 +116,17 @@ module.exports = function makeStream({ db, env }) {
     return { ready: true, url: d.url || `${HOST}/${uid}/downloads/default.mp4`, duration: Math.round(v.duration || 0) };
   }
 
+  // Admin: an MP4 copy of an episode's current video (used to fix its audio without re-rendering the picture).
+  // Signed like playback links, and only fetchable from our own site. Call again until ready.
+  async function download(uid) {
+    if (!LIVE) throw show("Downloads need Cloudflare set up.");
+    if (!/^[a-f0-9]{32}$/.test(String(uid))) throw show("That isn't a Cloudflare video id.");
+    const d = (await cf("POST", "/" + uid + "/downloads"))?.default || {};
+    if (d.status !== "ready") return { ready: false, pct: Number(d.percentComplete || 0) };
+    const token = sign(uid, await signingKey(), 6);
+    return { ready: true, url: `${HOST}/${token}/downloads/default.mp4` };
+  }
+
   // Admin → Numbers: minutes stored against the plan, minutes watched this month and a cost estimate.
   // Prices: $5 a month per 1,000 minutes stored (bought in blocks), $1 per 1,000 minutes delivered.
   async function usage() {
@@ -170,5 +181,5 @@ module.exports = function makeStream({ db, env }) {
     return true;
   }
 
-  return { LIVE, playUrl, thumbUrl, signingKey, uploadUrl, status, sign, protect, previewClip, teaserUpload, teaserReady, usage, remove, SAMPLE_HLS };
+  return { LIVE, playUrl, thumbUrl, signingKey, uploadUrl, status, sign, protect, previewClip, teaserUpload, teaserReady, download, usage, remove, SAMPLE_HLS };
 };
