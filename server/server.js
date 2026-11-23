@@ -224,6 +224,7 @@ async function admin(uid, body) {
   if (action === "teaserUpload") return stream.teaserUpload(body);
   if (action === "teaserReady") return stream.teaserReady(String(body.uid || ""));
   if (action === "storage") return stream.usage();
+  if (action === "download") return stream.download(String(body.uid || ""));
   if (action === "dropOldVideo") { // after an episode's video was replaced: delete the previous one from Stream
     const ref = db.doc(`titles/${String(body.titleId || "")}/episodes/${String(body.epId || "")}`);
     const ep = (await ref.get()).data();
