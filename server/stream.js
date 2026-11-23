@@ -57,9 +57,9 @@ module.exports = function makeStream({ db, env }) {
     return keyCache;
   }
 
-  function sign(videoUid, key, hours = LINK_HOURS) {
+  function sign(videoUid, key, hours = LINK_HOURS, extra = {}) {
     const head = b64url(JSON.stringify({ alg: "RS256", kid: key.id }));
-    const body = b64url(JSON.stringify({ sub: videoUid, kid: key.id, exp: Math.floor(Date.now() / 1000) + hours * 3600 }));
+    const body = b64url(JSON.stringify({ sub: videoUid, kid: key.id, exp: Math.floor(Date.now() / 1000) + hours * 3600, ...extra }));
     const sig = crypto.createSign("RSA-SHA256").update(`${head}.${body}`).sign(key.pem);
     return `${head}.${body}.${b64url(sig)}`;
   }
@@ -123,7 +123,7 @@ module.exports = function makeStream({ db, env }) {
     if (!/^[a-f0-9]{32}$/.test(String(uid))) throw show("That isn't a Cloudflare video id.");
     const d = (await cf("POST", "/" + uid + "/downloads"))?.default || {};
     if (d.status !== "ready") return { ready: false, pct: Number(d.percentComplete || 0) };
-    const token = sign(uid, await signingKey(), 6);
+    const token = sign(uid, await signingKey(), 6, { downloadable: true }); // signed downloads need this claim
     return { ready: true, url: `${HOST}/${token}/downloads/default.mp4` };
   }
 
