@@ -118,13 +118,15 @@ module.exports = function makeStream({ db, env }) {
 
   // Admin: an MP4 copy of an episode's current video (used to fix its audio without re-rendering the picture).
   // Signed like playback links, and only fetchable from our own site. Call again until ready.
-  async function download(uid) {
+  async function download(uid, kind = "video") {
     if (!LIVE) throw show("Downloads need Cloudflare set up.");
     if (!/^[a-f0-9]{32}$/.test(String(uid))) throw show("That isn't a Cloudflare video id.");
-    const d = (await cf("POST", "/" + uid + "/downloads"))?.default || {};
+    const audio = kind === "audio"; // audio-only copy (much smaller) for checking pronunciation
+    const res = await cf("POST", "/" + uid + "/downloads" + (audio ? "/audio" : ""));
+    const d = (audio ? res?.audio : res?.default) || {};
     if (d.status !== "ready") return { ready: false, pct: Number(d.percentComplete || 0) };
     const token = sign(uid, await signingKey(), 6, { downloadable: true }); // signed downloads need this claim
-    return { ready: true, url: `${HOST}/${token}/downloads/default.mp4` };
+    return { ready: true, url: `${HOST}/${token}/downloads/${audio ? "audio.m4a" : "default.mp4"}` };
   }
 
   // Admin → Numbers: minutes stored against the plan, minutes watched this month and a cost estimate.
