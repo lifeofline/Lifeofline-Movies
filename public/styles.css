@@ -387,7 +387,7 @@ body.playing { overflow: hidden; }
 .pnext { display: inline-flex; align-items: center; gap: 6px; flex: none; }
 .pnext[hidden] { display: none; }
 /* Centre: back 10 · play/pause · forward 10 (Netflix / ZEE5 style) */
-.pmid { top: 50%; transform: translateY(-50%); display: flex; align-items: center; justify-content: center; gap: clamp(28px, 10vw, 64px); pointer-events: none; }
+.pmid { top: 50%; transform: translateY(-50%) scale(var(--pmid-s, 1)); display: flex; align-items: center; justify-content: center; gap: clamp(28px, 10vw, 64px); pointer-events: none; }
 .pmid .pic { pointer-events: auto; }
 .pbot { bottom: 0; padding-top: 34px; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); background: linear-gradient(0deg, rgba(0,0,0,.85), transparent); display: flex; flex-direction: column; gap: 4px; }
 .pov.idle .ptop, .pov.idle .pbot, .pov.idle .pmid { opacity: 0; pointer-events: none; }

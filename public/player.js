@@ -166,7 +166,7 @@ async function start(P, epId, trailer, startAt, skipIntro = false) {
   P.res = r; P.trailer = !!trailer;
   // The server picks the shape for this screen: 9:16 for a phone held upright (fills the phone, no forced landscape),
   // 16:9 for TVs, computers and phones turned sideways when the episode has a wide version.
-  { const tall = !trailer && !P.listen && (r.format ? r.format === "v" : P.title.format === "v"); P.vertical = tall; $("#pstage", P.ov)?.classList.toggle("v", tall); }
+  { const tall = !trailer && !P.listen && (r.format ? r.format === "v" : P.title.format === "v"); P.vertical = tall; $("#pstage", P.ov)?.classList.toggle("v", tall); placeMid(P); }
   P.ep = trailer ? null : (P.episodes || []).find((x) => x.id === r.epId) || { id: r.epId, n: r.n, name: r.name };
   // Episode name first (e.g. the ghazal), with the series and episode number underneath.
   const rawName = String(r.name || P.ep?.name || "").trim();
@@ -344,8 +344,14 @@ function wire(P) {
   ppb.innerHTML = ICON_PLAY;
   // Controls appear on a tap and fade after a few seconds of playing (like Netflix / ZEE5); they stay while paused.
   const hide = () => { if (!v.paused && !P.seeking && !P.listen && $("#pmenu", ov)?.hidden !== false) ov.classList.add("idle"); };
-  const wake = () => { ov.classList.remove("idle"); clearTimeout(P.idleT); P.idleT = setTimeout(hide, 3500); };
+  const wake = () => { ov.classList.remove("idle"); clearTimeout(P.idleT); P.idleT = setTimeout(hide, 3500); placeMid(P); };
   P.wake = wake;
+  // Keep the centre controls off the sher captions burned into the picture, on every size, turn and full screen.
+  P.onPlace = () => placeMid(P);
+  window.addEventListener("resize", P.onPlace); window.addEventListener("orientationchange", P.onPlace);
+  [P.video, P.vis].forEach((x) => { x?.addEventListener("loadedmetadata", P.onPlace); x?.addEventListener("resize", P.onPlace); });
+  if (window.ResizeObserver) { P.ro = new ResizeObserver(P.onPlace); P.ro.observe($("#pstage", ov)); }
+  placeMid(P);
   v.addEventListener("play", () => {
     // Paused for a while on a ghazal: pick up from the start of the sher, not mid-line.
     if (P.poetry && P.pausedAt && Date.now() - P.pausedAt > 4000 && P.phase === "play" && v.currentTime > 3 && !P.seeking) {
@@ -520,7 +526,7 @@ function wire(P) {
     else if (e.key === "f") toggleFullscreen(P);
   };
   const fsIcon = () => { const on = !!(document.fullscreenElement || document.webkitFullscreenElement); const fb = $("#pfsb", ov); if (fb) { fb.innerHTML = on ? ICON_FS_EXIT : ICON_FS; fb.setAttribute("aria-label", on ? "Exit full screen" : "Full screen"); } };
-  P.onFs = fsIcon; document.addEventListener("fullscreenchange", fsIcon); document.addEventListener("webkitfullscreenchange", fsIcon);
+  P.onFs = () => { fsIcon(); placeMid(P); }; document.addEventListener("fullscreenchange", P.onFs); document.addEventListener("webkitfullscreenchange", P.onFs);
   // Lock-screen and headphone controls, with the title shown on the phone's lock screen.
   if ("mediaSession" in navigator) {
     const ms = navigator.mediaSession;
@@ -551,6 +557,7 @@ function teardown(fromCode) {
   document.removeEventListener("keydown", P.onKey);
   window.removeEventListener("popstate", P.onPop);
   document.removeEventListener("fullscreenchange", P.onFs); document.removeEventListener("webkitfullscreenchange", P.onFs);
+  window.removeEventListener("resize", P.onPlace); window.removeEventListener("orientationchange", P.onPlace); P.ro?.disconnect();
   try { screen.orientation?.unlock?.(); } catch { /* not supported */ }
   if ("mediaSession" in navigator) { try { navigator.mediaSession.metadata = null; ["play", "pause", "seekbackward", "seekforward", "nexttrack", "previoustrack", "seekto"].forEach((a) => navigator.mediaSession.setActionHandler(a, null)); } catch { /* ignore */ } }
   try { P.video.pause(); P.hls?.destroy(); P.video.removeAttribute("src"); P.video.load(); } catch { /* ignore */ }
@@ -560,6 +567,32 @@ function teardown(fromCode) {
   P.ov.remove(); document.body.classList.remove("playing");
   if (fromCode) history.back();
   P.onClosed?.();
+}
+
+// Centre controls (Previous · back 10 · play/pause · forward 10 · Next): never over the sher captions burned into the video.
+// The captions run from the "SHER n / N" label (~57% of the 16:9 picture's height, ~66% of the 9:16 one) to the English line (~94%).
+// The row goes just under the captions (in the black band under the picture when
+// there is one), above the progress bar; if there isn't room down there, just above the captions instead.
+const CAP_TOP = { h: 0.56, v: 0.64 }, CAP_BOT = 0.95;
+function placeMid(P) {
+  const ov = P.ov, mid = $("#pmid", ov), stage = $("#pstage", ov);
+  if (!mid || !stage) return;
+  if (P.listen) { mid.style.top = ""; mid.style.removeProperty("--pmid-s"); return; }
+  const S = stage.getBoundingClientRect(); if (!S.height) return;
+  const vid = P.vis || P.video, iw = vid?.videoWidth, ih = vid?.videoHeight;
+  const ar = iw && ih ? iw / ih : P.vertical ? 9 / 16 : 16 / 9;
+  // The picture as drawn (object-fit: contain): black bands above/below or at the sides.
+  const rh = Math.min(S.height, S.width / ar), top = (S.height - rh) / 2;
+  const H = mid.offsetHeight || 76, gap = 4;
+  const ctl = $("#pbot .pctl", ov), C = ctl?.offsetHeight ? ctl.getBoundingClientRect() : null;
+  const barTop = (C ? C.top - S.top : S.height - 108) - gap; // top of the time / progress bar row
+  const ptop = $(".ptop", ov), topEnd = (ptop?.offsetHeight || 64) + gap;
+  const below = top + rh * CAP_BOT + gap, room = barTop - below;
+  let y, s = 1;
+  if (room >= H * 0.6) { s = Math.min(1, room / H); y = below + (H * s) / 2; }
+  else { y = Math.max(topEnd + H / 2, top + rh * CAP_TOP[P.vertical ? "v" : "h"] - gap - H / 2); }
+  mid.style.top = Math.round(y) + "px";
+  if (s < 1) mid.style.setProperty("--pmid-s", s.toFixed(3)); else mid.style.removeProperty("--pmid-s");
 }
 
 // Full screen. Android and computers: the whole player, turned sideways for wide titles.
