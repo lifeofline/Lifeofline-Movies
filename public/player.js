@@ -92,13 +92,6 @@ export async function openPlayer(opts) {
       <div class="pslow" role="status"><span class="spin" aria-hidden="true"></span>Slow connection · still loading, it will start by itself<button class="btn sm ghost" data-pretry>Retry</button></div>
       <div class="pvst" id="pvst" hidden aria-live="polite"><i></i><span id="pvtx">Say “phir se”, “agla” or “ruko”</span></div>
       <div class="ptop"><button class="pic" data-pclose aria-label="Close">${ICON_X}</button><div class="pttl"><span class="pt2"><b id="pname">${esc(title.title)}</b><span class="psubrow"><small id="psub" hidden></small><span class="rating" id="prate">${esc(title.rating || "U")}</span></span></span></div></div>
-      <div class="pmid" id="pmid">
-        <button class="pic ep" data-pprev id="pprev" hidden aria-label="Previous episode">${ICON_PREV}<span>Previous</span></button>
-        <button class="pic big" data-seek="-10" aria-label="Back 10 seconds">${ICON_BACK}</button>
-        <button class="pic huge" data-pp aria-label="Play or pause" id="ppb"></button>
-        <button class="pic big" data-seek="10" aria-label="Forward 10 seconds">${ICON_FWD}</button>
-        <button class="pic ep" data-pnext id="pnext" hidden aria-label="Next episode">${ICON_NEXT}<span>Next</span></button>
-      </div>
       <div class="pbot" id="pbot">
         <div class="pctl">
           <span class="ptime" id="ptime">0:00</span>
@@ -106,12 +99,22 @@ export async function openPlayer(opts) {
           <span class="ptime" id="pleft">-0:00</span>
         </div>
         <div class="pctl pbtns">
-          <button class="pbtn psher" data-psher id="psherb" hidden aria-label="Repeat the last sher">↺ Sher</button>
-          <button class="pbtn plist" data-plist id="plist" hidden aria-label="List of shers">☰ Shers</button>
+          <span class="pside l">
+          <button class="pbtn psher" data-psher id="psherb" hidden aria-label="Repeat the last sher">↺<span class="pl"> Sher</span></button>
+          <button class="pbtn plist" data-plist id="plist" hidden aria-label="List of shers">☰<span class="pl"> Shers</span></button>
           ${opts.trailer || !listen ? "" : `<button class="pbtn pmode" data-pmode aria-label="${listen ? "Watch the video" : "Listen with the screen off"}">${listen ? ICON_TV + "<span>Watch</span>" : ICON_HEAD + "<span>Listen</span><small>screen can be off</small>"}</button>`}
-          <span class="pspace"></span>
-          <button class="pbtn pmorebtn" data-pmore id="pmoreb" aria-expanded="false" aria-controls="pmenu" aria-label="More options">⋯ More</button>
+          </span>
+          <div class="pmid" id="pmid" role="group" aria-label="Playback">
+            <button class="pic ep" data-pprev id="pprev" hidden aria-label="Previous episode">${ICON_PREV}<span>Previous</span></button>
+            <button class="pic big" data-seek="-10" aria-label="Back 10 seconds">${ICON_BACK}</button>
+            <button class="pic huge" data-pp aria-label="Play or pause" id="ppb"></button>
+            <button class="pic big" data-seek="10" aria-label="Forward 10 seconds">${ICON_FWD}</button>
+            <button class="pic ep" data-pnext id="pnext" hidden aria-label="Next episode">${ICON_NEXT}<span>Next</span></button>
+          </div>
+          <span class="pside r">
+          <button class="pbtn pmorebtn" data-pmore id="pmoreb" aria-expanded="false" aria-controls="pmenu" aria-label="More options">⋯<span class="pl"> More</span></button>
           ${listen ? "" : `<button class="pic" data-pfs aria-label="Full screen" id="pfsb">${ICON_FS}</button>`}
+          </span>
           <div class="pmenu" id="pmenu" hidden role="group" aria-label="Player options">
             <button class="pbtn ptog" data-pauto id="pauto" aria-pressed="${pref.autoplay}" hidden><span class="sw" aria-hidden="true"></span>Autoplay next episode</button>
             <button class="pbtn ploop" data-ploop id="ploop" hidden aria-label="Repeat each sher">🔁 Each sher: once</button>
@@ -166,7 +169,7 @@ async function start(P, epId, trailer, startAt, skipIntro = false) {
   P.res = r; P.trailer = !!trailer;
   // The server picks the shape for this screen: 9:16 for a phone held upright (fills the phone, no forced landscape),
   // 16:9 for TVs, computers and phones turned sideways when the episode has a wide version.
-  { const tall = !trailer && !P.listen && (r.format ? r.format === "v" : P.title.format === "v"); P.vertical = tall; $("#pstage", P.ov)?.classList.toggle("v", tall); placeMid(P); }
+  { const tall = !trailer && !P.listen && (r.format ? r.format === "v" : P.title.format === "v"); P.vertical = tall; $("#pstage", P.ov)?.classList.toggle("v", tall); }
   P.ep = trailer ? null : (P.episodes || []).find((x) => x.id === r.epId) || { id: r.epId, n: r.n, name: r.name };
   // Episode name first (e.g. the ghazal), with the series and episode number underneath.
   const rawName = String(r.name || P.ep?.name || "").trim();
@@ -179,7 +182,7 @@ async function start(P, epId, trailer, startAt, skipIntro = false) {
     const parts = all.length > 0 && all.every((x) => x.kind);
     P.parts = parts ? all : []; P.shers = parts ? [] : all; P.sherI = -1; P.loopLeft = 0; }
   // Exact "↺ Sher" only when this episode has its sher timings; until then the button says what it really does.
-  { const sb = $("#psherb", P.ov); sb.hidden = !P.poetry || trailer; sb.textContent = P.shers.length ? "↺ Sher" : `↺ ${FALLBACK_BACK}s`; sb.setAttribute("aria-label", P.shers.length ? "Repeat the last sher" : `Back ${FALLBACK_BACK} seconds`); } $("#ploop", P.ov).hidden = !P.shers.length; { const pl = $("#plist", P.ov); pl.hidden = !P.shers.length && !P.parts.length; pl.textContent = P.parts.length ? "☰ Parts" : "☰ Shers"; pl.setAttribute("aria-label", P.parts.length ? "Letters and stories in this episode" : "List of shers"); }
+  { const sb = $("#psherb", P.ov); sb.hidden = !P.poetry || trailer; sb.innerHTML = `↺<span class="pl"> ${P.shers.length ? "Sher" : FALLBACK_BACK + "s"}</span>`; sb.setAttribute("aria-label", P.shers.length ? "Repeat the last sher" : `Back ${FALLBACK_BACK} seconds`); } $("#ploop", P.ov).hidden = !P.shers.length; { const pl = $("#plist", P.ov); pl.hidden = !P.shers.length && !P.parts.length; pl.innerHTML = `☰<span class="pl"> ${P.parts.length ? "Parts" : "Shers"}</span>`; pl.setAttribute("aria-label", P.parts.length ? "Letters and stories in this episode" : "List of shers"); }
   $("#ploop", P.ov).textContent = loopLabel(P.loopN); $("#ploop", P.ov).setAttribute("aria-pressed", P.loopN > 1);
   showSher(P, -1);
   const nx = nextEp(P); $("#pnext", P.ov).hidden = !nx; $("#pprev", P.ov).hidden = !prevEp(P); $("#pauto", P.ov).hidden = !(P.episodes?.length > 1) || trailer;
@@ -343,15 +346,22 @@ function wire(P) {
   const fill = $("#pfill", ov), buf = $("#pbuf", ov), time = $("#ptime", ov), left = $("#pleft", ov), knob = $("#pknob", ov), ppb = $("#ppb", ov), bar = $("#pbar", ov), cue = $("#pcue", ov);
   ppb.innerHTML = ICON_PLAY;
   // Controls appear on a tap and fade after a few seconds of playing (like Netflix / ZEE5); they stay while paused.
-  const hide = () => { if (!v.paused && !P.seeking && !P.listen && $("#pmenu", ov)?.hidden !== false) ov.classList.add("idle"); };
-  const wake = () => { ov.classList.remove("idle"); clearTimeout(P.idleT); P.idleT = setTimeout(hide, 3500); placeMid(P); };
+  // Hidden again after 2 s without use with a mouse (3 s after a tap); never while paused, seeking, a menu is open
+  // or the mouse rests on the bar.
+  const hide = () => { if (!v.paused && !P.seeking && !P.listen && !P.overBar && $("#pmenu", ov)?.hidden !== false) ov.classList.add("idle"); };
+  const wake = () => { ov.classList.remove("idle"); clearTimeout(P.idleT); P.idleT = setTimeout(hide, P.touch ? 3000 : 2000); };
   P.wake = wake;
-  // Keep the centre controls off the sher captions burned into the picture, on every size, turn and full screen.
-  P.onPlace = () => placeMid(P);
-  window.addEventListener("resize", P.onPlace); window.addEventListener("orientationchange", P.onPlace);
-  [P.video, P.vis].forEach((x) => { x?.addEventListener("loadedmetadata", P.onPlace); x?.addEventListener("resize", P.onPlace); });
-  if (window.ResizeObserver) { P.ro = new ResizeObserver(P.onPlace); P.ro.observe($("#pstage", ov)); }
-  placeMid(P);
+  // The picture and the bottom bar are laid out as one block: the bar sits right under the picture (in the black band
+  // when there is one, moving the picture up a little), so the controls never cover the video or its captions.
+  const syncBar = () => {
+    const bar = $("#pbot", ov), st = $("#pstage", ov), h = bar?.offsetHeight; if (!h || !st) return;
+    const vid = P.vis || P.video, ar = vid?.videoWidth && vid?.videoHeight ? vid.videoWidth / vid.videoHeight : P.vertical ? 9 / 16 : 16 / 9;
+    const W = st.clientWidth, H = st.clientHeight, rh = Math.min(W / ar, H - h), top = Math.max(0, (H - h - rh) / 2);
+    ov.style.setProperty("--barh", h + "px"); ov.style.setProperty("--vtop", top + "px"); ov.style.setProperty("--vh", rh + "px");
+  };
+  if (window.ResizeObserver) { P.ro = new ResizeObserver(syncBar); P.ro.observe($("#pbot", ov)); P.ro.observe($("#pstage", ov)); }
+  [P.video, P.vis].forEach((x) => { x?.addEventListener("loadedmetadata", syncBar); x?.addEventListener("resize", syncBar); });
+  syncBar();
   v.addEventListener("play", () => {
     // Paused for a while on a ghazal: pick up from the start of the sher, not mid-line.
     if (P.poetry && P.pausedAt && Date.now() - P.pausedAt > 4000 && P.phase === "play" && v.currentTime > 3 && !P.seeking) {
@@ -451,11 +461,19 @@ function wire(P) {
   });
   ["contextmenu", "dragstart", "copy"].forEach((t) => ov.addEventListener(t, (e) => e.preventDefault()));
   // Only a real mouse wakes the controls by moving: phones send a fake mouse move just before each tap.
-  ov.addEventListener("pointermove", (e) => { if (e.pointerType === "mouse" && (e.movementX || e.movementY)) wake(); });
+  // and only in the lower quarter of the player or over the bar itself, so a stray move over the picture doesn't bring them up.
+  ov.addEventListener("pointermove", (e) => {
+    if (e.pointerType !== "mouse" || !(e.movementX || e.movementY)) return;
+    if (e.target.closest?.("#pbot, .ptop") || e.clientY >= ov.getBoundingClientRect().bottom - ov.clientHeight * 0.25) wake();
+  });
+  ov.addEventListener("pointerdown", (e) => { P.touch = e.pointerType !== "mouse"; }, { capture: true });
+  const pbot = $("#pbot", ov);
+  pbot.addEventListener("pointerenter", (e) => { if (e.pointerType === "mouse") { P.overBar = true; wake(); } });
+  pbot.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") { P.overBar = false; if (!ov.classList.contains("idle")) wake(); } });
 
   // Tapping the picture: one tap shows/hides the controls; a quick double tap on the left or right third skips 10 seconds.
   let lastTap = 0, tapT = 0;
-  const onPicture = (e) => e.target === v || (P.vis && e.target === P.vis) || e.target.id === "pstage" || e.target.id === "pmid";
+  const onPicture = (e) => e.target === v || (P.vis && e.target === P.vis) || e.target.id === "pstage";
   ov.addEventListener("click", (e) => {
     const b = e.target.closest("button, [data-pclose], a, select, label");
     const menu = $("#pmenu", ov);
@@ -526,7 +544,7 @@ function wire(P) {
     else if (e.key === "f") toggleFullscreen(P);
   };
   const fsIcon = () => { const on = !!(document.fullscreenElement || document.webkitFullscreenElement); const fb = $("#pfsb", ov); if (fb) { fb.innerHTML = on ? ICON_FS_EXIT : ICON_FS; fb.setAttribute("aria-label", on ? "Exit full screen" : "Full screen"); } };
-  P.onFs = () => { fsIcon(); placeMid(P); }; document.addEventListener("fullscreenchange", P.onFs); document.addEventListener("webkitfullscreenchange", P.onFs);
+  P.onFs = fsIcon; document.addEventListener("fullscreenchange", fsIcon); document.addEventListener("webkitfullscreenchange", P.onFs);
   // Lock-screen and headphone controls, with the title shown on the phone's lock screen.
   if ("mediaSession" in navigator) {
     const ms = navigator.mediaSession;
@@ -557,7 +575,7 @@ function teardown(fromCode) {
   document.removeEventListener("keydown", P.onKey);
   window.removeEventListener("popstate", P.onPop);
   document.removeEventListener("fullscreenchange", P.onFs); document.removeEventListener("webkitfullscreenchange", P.onFs);
-  window.removeEventListener("resize", P.onPlace); window.removeEventListener("orientationchange", P.onPlace); P.ro?.disconnect();
+  P.ro?.disconnect();
   try { screen.orientation?.unlock?.(); } catch { /* not supported */ }
   if ("mediaSession" in navigator) { try { navigator.mediaSession.metadata = null; ["play", "pause", "seekbackward", "seekforward", "nexttrack", "previoustrack", "seekto"].forEach((a) => navigator.mediaSession.setActionHandler(a, null)); } catch { /* ignore */ } }
   try { P.video.pause(); P.hls?.destroy(); P.video.removeAttribute("src"); P.video.load(); } catch { /* ignore */ }
@@ -567,32 +585,6 @@ function teardown(fromCode) {
   P.ov.remove(); document.body.classList.remove("playing");
   if (fromCode) history.back();
   P.onClosed?.();
-}
-
-// Centre controls (Previous · back 10 · play/pause · forward 10 · Next): never over the sher captions burned into the video.
-// The captions run from the "SHER n / N" label (~57% of the 16:9 picture's height, ~66% of the 9:16 one) to the English line (~94%).
-// The row goes just under the captions (in the black band under the picture when
-// there is one), above the progress bar; if there isn't room down there, just above the captions instead.
-const CAP_TOP = { h: 0.56, v: 0.64 }, CAP_BOT = 0.95;
-function placeMid(P) {
-  const ov = P.ov, mid = $("#pmid", ov), stage = $("#pstage", ov);
-  if (!mid || !stage) return;
-  if (P.listen) { mid.style.top = ""; mid.style.removeProperty("--pmid-s"); return; }
-  const S = stage.getBoundingClientRect(); if (!S.height) return;
-  const vid = P.vis || P.video, iw = vid?.videoWidth, ih = vid?.videoHeight;
-  const ar = iw && ih ? iw / ih : P.vertical ? 9 / 16 : 16 / 9;
-  // The picture as drawn (object-fit: contain): black bands above/below or at the sides.
-  const rh = Math.min(S.height, S.width / ar), top = (S.height - rh) / 2;
-  const H = mid.offsetHeight || 76, gap = 4;
-  const ctl = $("#pbot .pctl", ov), C = ctl?.offsetHeight ? ctl.getBoundingClientRect() : null;
-  const barTop = (C ? C.top - S.top : S.height - 108) - gap; // top of the time / progress bar row
-  const ptop = $(".ptop", ov), topEnd = (ptop?.offsetHeight || 64) + gap;
-  const below = top + rh * CAP_BOT + gap, room = barTop - below;
-  let y, s = 1;
-  if (room >= H * 0.6) { s = Math.min(1, room / H); y = below + (H * s) / 2; }
-  else { y = Math.max(topEnd + H / 2, top + rh * CAP_TOP[P.vertical ? "v" : "h"] - gap - H / 2); }
-  mid.style.top = Math.round(y) + "px";
-  if (s < 1) mid.style.setProperty("--pmid-s", s.toFixed(3)); else mid.style.removeProperty("--pmid-s");
 }
 
 // Full screen. Android and computers: the whole player, turned sideways for wide titles.
