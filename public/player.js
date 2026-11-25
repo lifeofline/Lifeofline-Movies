@@ -151,7 +151,7 @@ async function start(P, epId, trailer, startAt, skipIntro = false) {
     r = !trailer && P.reuse?.epId === epId ? P.reuse
       : trailer && P.direct ? { hls: P.direct, ads: false, premium: false, rating: P.title.rating || "U", test: false }
       : local?.src ? { hls: local.src, epId: local.id, n: local.n, name: local.name, ads: false, premium: false, rating: P.title.rating || "U", test: false }
-      : P.pre?.id === epId && !trailer ? await P.pre.p.catch(() => P.api.play(P.title.id, epId, false, !P.listen && uprightPhone()))
+      : P.pre?.id === epId && !trailer && P.pre.pt === (!P.listen && uprightPhone()) ? await P.pre.p.catch(() => P.api.play(P.title.id, epId, false, !P.listen && uprightPhone()))
       : await P.api.play(P.title.id, epId, trailer, !trailer && !P.listen && uprightPhone());
   }
   catch (e) {
@@ -388,7 +388,7 @@ function wire(P) {
     // (A locked phone pauses the page as soon as the sound stops; any wait in between leaves it silent until unlocked.)
     if ((P.listen || P.vis) && d && d - v.currentTime < 60 && !P.pre && pref.autoplay && !P.res?.preview) {
       const nx = nextEp(P);
-      if (nx && (freeEpisode(P.title, nx) || P.res?.premium || P.title.previewSec)) { P.pre = { id: nx.id, p: P.api.play(P.title.id, nx.id, false, false) }; P.pre.p.then((r) => { if (IOS && r?.hls) audioSrc(r.hls); }).catch(() => {}); }
+      if (nx && (freeEpisode(P.title, nx) || P.res?.premium || P.title.previewSec)) { const pt = !P.listen && uprightPhone(); P.pre = { id: nx.id, pt, p: P.api.play(P.title.id, nx.id, false, pt) }; P.pre.p.then((r) => { if (IOS && r?.hls) audioSrc(r.hls); }).catch(() => {}); }
     }
   });
   if (P.vis) {
