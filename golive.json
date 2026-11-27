@@ -187,17 +187,6 @@
 "ts": 1795668112
 },
 {
-"id": "e49",
-"branch": "tmp-vis4-e49",
-"retime": {
-"60.8": [
-79.95,
-87.97
-]
-},
-"ts": 1795668159
-},
-{
 "id": "emwh1y7c3",
 "branch": "tmp-vis4-emwh1y7c3",
 "retime": {},
@@ -1313,5 +1302,11 @@
 "branch": "tmp-vis4-e48",
 "retime": {},
 "ts": 1795806745
+},
+{
+"id": "e49",
+"branch": "tmp-vis4-e49",
+"retime": {},
+"ts": 1795807118
 }
 ]
