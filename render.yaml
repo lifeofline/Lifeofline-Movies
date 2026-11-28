@@ -31,7 +31,7 @@ services:
   - type: web
     name: lifeofline-movies-api
     runtime: node
-    plan: free
+    plan: starter
     rootDir: server
     buildCommand: npm install
     startCommand: node server.js
